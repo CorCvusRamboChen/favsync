@@ -7,6 +7,8 @@
 // 多账号：抖音每个账号一个 profile 目录（data/browser-profiles/<id>），默认账号仍是 data/browser-profile，
 // 和微博共用；这样第二个抖音账号的登录态不会把第一个顶掉。
 import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { dataDir } from '../db.js';
 
 export const DEFAULT_PROFILE = 'default';
@@ -55,4 +57,24 @@ export async function launchProfile(name = DEFAULT_PROFILE, { headless = true, l
   ctx.close = async (...a) => { try { return await origClose(...a); } finally { if (!released) { released = true; release(); } } };
   ctx.profileDir = dir;
   return ctx;
+}
+
+// 本机有没有能用的 Chrome / Edge：各登录按钮据此给提示，而不是点下去才报"开不了浏览器"
+export function detectBrowser() {
+  const env = process.env;
+  const home = env.HOME || env.USERPROFILE || '';
+  const win = (base, ...rest) => (base ? path.join(base, ...rest) : null);
+  const candidates = process.platform === 'win32'
+    ? [['chrome', win(env.PROGRAMFILES, 'Google', 'Chrome', 'Application', 'chrome.exe')], ['chrome', win(env['PROGRAMFILES(X86)'], 'Google', 'Chrome', 'Application', 'chrome.exe')], ['chrome', win(env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe')],
+      ['msedge', win(env['PROGRAMFILES(X86)'], 'Microsoft', 'Edge', 'Application', 'msedge.exe')], ['msedge', win(env.PROGRAMFILES, 'Microsoft', 'Edge', 'Application', 'msedge.exe')]]
+    : process.platform === 'darwin'
+      ? [['chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'], ['chrome', path.join(home, 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome')], ['msedge', '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge']]
+      : [['chrome', '/usr/bin/google-chrome'], ['chrome', '/usr/bin/google-chrome-stable'], ['chrome', '/usr/bin/chromium'], ['chrome', '/usr/bin/chromium-browser'], ['msedge', '/usr/bin/microsoft-edge'], ['msedge', '/opt/microsoft/msedge/msedge']];
+  for (const [channel, p] of candidates) if (p && existsSync(p)) return { channel, path: p };
+  if (process.platform !== 'win32') {
+    for (const [channel, bin] of [['chrome', 'google-chrome'], ['chrome', 'chromium'], ['msedge', 'microsoft-edge']]) {
+      try { const p = execSync('command -v ' + bin, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); if (p) return { channel, path: p }; } catch { /* 没有 */ }
+    }
+  }
+  return null;
 }

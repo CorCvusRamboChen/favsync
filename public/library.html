@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>收藏库 · FavSync</title>
+<title data-i18n-doc="app.library">收藏库 · FavSync</title>
 <link rel="icon" href="/icon.svg">
 <link rel="stylesheet" href="/css/base.css">
 <link rel="stylesheet" href="/css/page.css">
@@ -12,19 +12,19 @@
 <body class="pg">
 <header class="pg-top">
   <a class="back" href="/library.html"><b>Fav</b>Sync</a>
-  <h1>📚 收藏库</h1>
+  <h1 data-i18n="app.library">收藏库</h1>
   <div class="sp"></div>
-  <button class="back" onclick="cycleTheme()" title="切换主题" style="background:none;border:0;cursor:pointer;font:inherit">◐ 主题</button>
-  <a class="back" href="/settings.html">⚙ 设置 ›</a>
+  <div class="tools" id="hdrTools" data-page="library"></div>
 </header>
-<main id="main"><div class="empty">加载中…</div></main>
+<main id="main"><div class="empty" data-i18n="common.loading">加载中…</div></main>
 <div id="toast"></div>
+<script src="/js/i18n.js"></script>
 <script src="/js/shell.js"></script>
 <script src="/js/library.js"></script>
 <script>
 async function render() {
   const r = await fetch('/api/library?' + libQuery());
-  if (!r.ok) { $('#main').innerHTML = `<div class="empty">读不到收藏库（HTTP ${r.status}）</div>`; return; }
+  if (!r.ok) { $('#main').innerHTML = `<div class="empty">${esc(t('lib.load.fail', { s: r.status }))}</div>`; return; }
   $('#main').innerHTML = htmlLibrary(shapeLibrary(await r.json()));
   libWatchMore();
   loadArchive();   // 要读磁盘，不挡列表渲染

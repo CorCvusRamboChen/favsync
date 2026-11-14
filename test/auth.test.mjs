@@ -77,3 +77,26 @@ test('登录口令：6 位数字、15 分钟、按站点、用一次就作废', 
   const realNow = Date.now; Date.now = () => realNow() + 16 * 60000;
   try { assert.equal(a.loginTicketOk('x', t2.code), false, '过期'); } finally { Date.now = realNow; }
 });
+
+test('配对链接：生成带 token 的收藏库地址；从地址里取 token、再把它去掉（手机扫码后地址栏不留令牌）', () => {
+  const url = a.pairUrl('http://10.0.0.2:3460/', 'ab+c/d=');
+  assert.equal(url, 'http://10.0.0.2:3460/library.html?token=ab%2Bc%2Fd%3D');
+  assert.equal(a.tokenFromUrl(url), 'ab+c/d=');
+  assert.equal(a.tokenFromUrl('/library.html?tag=x&token=%20t1%20#h'), 't1');
+  assert.equal(a.tokenFromUrl('/library.html?tag=x'), null);
+  assert.equal(a.tokenFromUrl('/library.html?token='), null);
+  assert.equal(a.tokenFromUrl('::not a url::'), null);
+  assert.equal(a.stripTokenFromUrl('/library.html?tag=x&token=t1#h'), '/library.html?tag=x#h');
+  assert.equal(a.stripTokenFromUrl('/library.html?token=t1'), '/library.html');
+});
+
+test('重置令牌：旧的作废、新的落盘；环境变量指定时不能重置', () => {
+  const old = a.apiToken();
+  const next = a.resetToken();
+  assert.ok(next && next !== old);
+  assert.equal(a.apiToken(), next);
+  assert.equal(JSON.parse(readFileSync(path.join(dir, 'data', 'token.json'), 'utf-8')).token, next);
+  const r = res(); a.authMiddleware(req('10.0.0.8', { authorization: 'Bearer ' + old }), r, () => {}); assert.equal(r.code, 401, '旧令牌不再放行');
+  process.env.FAVSYNC_TOKEN = 'fixed';
+  try { assert.equal(a.tokenFromEnv(), true); assert.equal(a.resetToken(), null); assert.equal(a.apiToken(), 'fixed'); } finally { delete process.env.FAVSYNC_TOKEN; }
+});

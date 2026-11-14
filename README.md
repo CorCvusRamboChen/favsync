@@ -1,46 +1,50 @@
 # FavSync
 
-把 **抖音的收藏（含收藏夹、收藏的音乐）、微博的收藏、X（Twitter）的点赞和书签** 自动同步到你自己的电脑上，
-每一条都存成**硬盘上的普通文件**：正文 `readable.md`、`metadata.json`、封面、图文原图（动图原样）、实况短片、视频 `video.mp4`、配乐 / 音乐 `audio.mp3`。
-附带一个 Eagle 风格的三栏收藏库页面（筛选 / 瀑布流 / 检视器），和一个纯静态的 `index.html`——不跑 FavSync 也能翻存档。
+**English** · [中文](README.zh-CN.md)
 
-> 站点被封、视频被删、账号没了、链接过期——你手里还有内容。这是这个项目唯一的目的。
+A self-hosted archiver for your own favorites on **Douyin** (collections, collection folders, saved music — multiple accounts), **Weibo** (favorites) and **X / Twitter** (likes + bookmarks). Sign in once, and FavSync syncs every 12 hours and stores every item as **plain files on disk**: `readable.md`, `metadata.json`, cover, original photos (GIF / animated WebP kept as-is), live-photo clips, `video.mp4`, `audio.mp3`.
 
-单用户、自托管、Node.js 一个进程，SQLite 内置模块，不需要 Docker、不需要数据库服务。
+It ships with an Eagle-style three-pane library (filters / masonry / inspector) and writes a static `index.html` into the archive root, so you can browse everything even without FavSync running.
+
+> When a site gets blocked, a video is taken down, an account disappears or a link expires — you still have the content. That is the only purpose of this project.
+
+Single user, self-hosted, one Node.js process, SQLite via the built-in `node:sqlite` module. No Docker, no database server.
+
+![Library](docs/library.png)
 
 ---
 
-## 为什么
+## Why
 
-- 平台上的「收藏」不是你的：作者删一条、平台下架一条、哪天整个站打不开，收藏夹里就只剩灰色的壳。
-- 现有的"保存视频"工具大多一次一条、要自己贴链接；FavSync 是**常态化**的：登录一次，之后每 12 小时自己去翻，新收藏自动进来，媒体文件慢慢补齐。
-- 存下来的东西要**能脱离这个工具活下去**：不进数据库 blob、不用私有格式，目录结构一眼能懂，云盘可以直接同步，资源管理器能翻，别的程序能读。
-- **防删**：原站删了的条目这里不删；你在收藏库里"移出"一条，也只是删数据库记录，硬盘上的文件不动。
+- A "favorite" on a platform is not yours. The author deletes a post, the platform takes one down, or the whole site becomes unreachable — your collection turns into a list of grey placeholders.
+- Most "save this video" tools work one link at a time. FavSync is **continuous**: sign in once, it pages through your favorites on a schedule, new items flow in, media files are fetched gradually in the background.
+- What you save must **outlive the tool**: no database blobs, no proprietary format. One folder per item with an obvious structure, cloud-sync friendly, readable by any file manager.
+- **Never deletes**: items removed upstream are kept locally. "Remove from library" in the UI only deletes the database row; files on disk stay.
 
-## 支持的平台与登录方式
+## Platforms and how sign-in works
 
-| 平台 | 收什么 | 登录方式 | 媒体怎么下 |
+| Platform | What is collected | Sign-in | Media |
 |---|---|---|---|
-| 抖音 | 「我的收藏」全部 + 每个收藏夹（打成标签）+ 收藏的音乐；支持**多账号** | 设置页点「添加抖音账号」→ 服务端无头浏览器把登录二维码导出来 → **手机抖音扫码**（服务器没屏幕也行） | 服务端用各账号自己的登录态在无头浏览器里下：封面 / 动态封面 / 视频 / 图文原图 / 实况 / 配乐 |
-| 微博 | 「我的收藏」（原微博已删的也留一条「已失效」壳） | ① 在服务器上弹出浏览器登录一次（要有屏幕）② 导入 [Weibo-archiver](https://github.com/Chilfish/Weibo-archiver) 导出的 JSON ③ 油猴脚本 | 图片服务端带 Referer 直接下；视频直链只有浏览器里的脚本拿得到 |
-| X（Twitter） | 点赞 + 书签（同一条推既点赞又书签只有一张卡）；多账号 | 设置页拿一个 15 分钟口令 → 在**有屏幕的电脑**上跑 `node scripts/login-x.mjs --server <服务器地址> --code <口令>` → 弹出的 Chrome 里正常登录 → cookie 自动发回服务器 | 服务端直接从公开 CDN 下：原图 / 最高码率 mp4 / 动图 |
+| Douyin | Everything in "My collection" + every collection folder (as tags) + saved music; **multiple accounts** | Settings → "Add account": the server starts a headless browser, extracts the login QR code and shows it in the web UI → **scan with the Douyin app** (works on a server without a display) | Downloaded by the server through each account's own session: cover / animated cover / video / original photos / live photos / soundtrack |
+| Weibo | "My favorites" (deleted posts keep an "unavailable" stub) | ① a one-time browser window on the server (needs a display) ② import JSON exported by [Weibo-archiver](https://github.com/Chilfish/Weibo-archiver) ③ userscript | Images fetched by the server with a Referer; video URLs are only reachable by the userscript running in your browser |
+| X (Twitter) | Likes + bookmarks (a post that is both is one card); multiple accounts | Settings → "Sign in via desktop browser" gives a 15-minute code → on **any computer with a screen** run `node scripts/login-x.mjs --server <server> --code <code>` → sign in to X in the Chrome window that opens → the session is sent back to the server | Fetched by the server from the public CDN: original images / highest-bitrate mp4 / GIFs |
 
-三个平台都另有一份**油猴脚本**（Tampermonkey）作为备用：在你自己平时登着的浏览器里跑，适合不想在服务器上留登录态的人。
+Each platform also has a **userscript** (Tampermonkey / Violentmonkey) as a fallback: it runs in the browser you are already signed in with, for people who do not want a session stored on the server.
 
-## 风控原则（写进了每一行代码）
+## Anti-ban rules (written into every code path)
 
-1. **零额外请求**：服务端同步和油猴脚本都只"旁听"页面自己翻收藏时发出的响应，从不自己拼接口、不碰签名（抖音的 a_bogus / msToken 之类）。
-2. **翻页像人**：每次滚动随机等 1.8–3.5 秒，每 8 次歇 5–10 秒，每轮有上限。
-3. **下载像人**：媒体一个一个来，中间随机 1–3 秒，每 10 个歇 8–15 秒。
-4. **限流即停**：接口回 403 / 429、页面冒出验证码、连续 3 次下载失败 → 立刻停下并记录，下一轮再来，绝不硬刷。
-5. **直链过期跳过**：抖音的视频 / 图片直链只活十几个小时，过期的条目直接跳过、不计失败，等下一次列表同步刷新地址（`urlExpiry`）。
-6. **只收你自己的收藏**：喜欢列表、浏览历史、别人的主页一概不碰。
+1. **Zero extra requests.** Both the server-side sync and the userscripts only *listen* to the responses the page itself makes while scrolling. They never assemble API calls or touch signatures (Douyin's `a_bogus` / `msToken` etc.).
+2. **Scroll like a human.** Random 1.8–3.5 s between scrolls, a 5–10 s rest every 8 scrolls, a cap per run.
+3. **Download like a human.** One file at a time, random 1–3 s between files, an 8–15 s rest every 10 files.
+4. **Stop on the first sign of trouble.** HTTP 403 / 429, a captcha on the page, or three consecutive download failures → stop immediately, record it, retry on the next scheduled run. Never hammer.
+5. **Skip expired links.** Douyin video / image URLs live for a dozen hours; expired ones are skipped (not counted as failures) until the next list sync refreshes them (`urlExpiry`).
+6. **Only your own favorites.** No liked-list, no watch history, no other people's profiles.
 
-即便如此，自动化访问仍可能违反平台的服务条款，账号也可能被风控。请只用于备份你自己的收藏，节奏别调得比默认更快。
+Automated access may still violate a platform's terms of service and your account may be flagged. Use it only to back up your own favorites and do not make the pacing faster than the defaults.
 
-## 安装
+## Install and run
 
-要求：**Node.js ≥ 22.5**（用到了内置的 `node:sqlite`，推荐 24）、本机装有 **Chrome 或 Edge**（Playwright 复用系统浏览器，不下载 Chromium）。ffmpeg 由 `ffmpeg-static` 自带，用来做缩略图和从视频抽封面。
+Requirements: **Node.js ≥ 22.5** (built-in `node:sqlite`; 24 recommended) and **Chrome or Edge** installed on the machine (Playwright reuses the system browser; nothing is downloaded). ffmpeg ships with `ffmpeg-static` and is used for thumbnails and video-frame covers.
 
 ```bash
 git clone https://github.com/CorCvusRamboChen/favsync.git
@@ -49,150 +53,152 @@ npm install
 npm start            # http://localhost:3460
 ```
 
-打开 `http://localhost:3460/settings.html`，按卡片上的提示登录想同步的平台。登录完点一次「现在同步」，之后每 12 小时自动跑。
+Open `http://localhost:3460/settings.html` and follow the cards. After the first sign-in click "Sync now" once; from then on it runs every 12 hours.
 
-服务器本机访问免验证；手机 / 别的电脑访问要带访问令牌（设置页「远程访问」里能看到，第一次打开时页面会弹框问）。
+Access from the server itself needs no sign-in. Phones and other computers need the access token — shown under *Connection & access* in Settings, or scan the pairing QR code there and the library opens with the token applied.
 
-## 页面
+## Screenshots
 
-- `/library.html`（也是 `/`）：收藏库。左栏按 来源 / 媒体类型（视频、图文、实况、动图、音乐、配乐、仅文字）/ 标签（抖音收藏夹、抖音账号、X 账号……按组折叠）筛选；中间瀑布流 / 网格 / 列表三种视图、三档卡片大小，缩略图走 `/thumb` 缓存；右栏检视器直接播本地视频 / 音频 / 图文，列出存档文件。双击卡片或点 ▶ 打开内置放大播放器。
-- `/settings.html`：各平台的登录、同步、脚本安装；定时开关；存档目录；访问令牌。
+| | |
+|---|---|
+| ![Settings: connection and platform cards](docs/settings.png) | ![Lightbox](docs/lightbox.png) |
+| ![X sign-in dialog](docs/login-x.png) | ![Douyin QR dialog](docs/login-douyin.png) |
 
-> 截图：待补（`docs/screenshot-library.png`、`docs/screenshot-settings.png`）
+<img src="docs/mobile.png" alt="Library at 390px" width="300">
 
-## 目录结构
+The UI is bilingual (中文 / English, toggle in the header, follows the browser language by default) and has light / dark themes. Screenshots use generated placeholder content.
+
+## Project layout
 
 ```
 favsync/
 ├─ src/
-│  ├─ server.js              HTTP 层：页面、接口、油猴脚本分发、缩略图、/archive 静态目录
-│  ├─ background-jobs.js     定时任务：12 小时同步、微博补图、X 补媒体
-│  ├─ db.js                  node:sqlite 封装（WAL、busy_timeout）
-│  ├─ store.js               条目 + 标签 + 媒体类型分面（items / tags / taggings / archives）
-│  ├─ archive.js             存档根目录、目录命名、状态、纯静态 index.html
-│  ├─ auth.js                本机免验证 / 远程令牌 / 安装码 / 登录口令
-│  ├─ thumbs.js              ffmpeg 缩略图缓存、从视频抽封面
-│  ├─ events.js              SSE 实时刷新
-│  ├─ net-guard.js           SSRF 防护
+│  ├─ server.js              HTTP layer: pages, API, userscript delivery, thumbnails, /archive static files
+│  ├─ background-jobs.js     scheduled jobs: 12-hour sync, Weibo image fetch, X media fetch
+│  ├─ db.js                  node:sqlite wrapper (WAL, busy_timeout)
+│  ├─ store.js               items + tags + media-type facets (items / tags / taggings / archives)
+│  ├─ archive.js             archive root, folder naming, status, static index.html
+│  ├─ auth.js                local = no auth / remote token / pairing link / install codes / login tickets
+│  ├─ thumbs.js              ffmpeg thumbnail cache, video-frame covers
+│  ├─ events.js              SSE live refresh
+│  ├─ net-guard.js           SSRF guard
 │  ├─ connectors/
-│  │  ├─ favorites-archive.js  文本存档 + 媒体落盘 + 文件头（魔数）校验 + /archive 路径编码
-│  │  ├─ douyin-favorites.js   抖音：整形、入库、多账号、收藏夹、音乐、无头同步、媒体下载、直链过期、封面重做
-│  │  ├─ weibo-favorites.js    微博：两种导出形状、转发去重、已失效识别、服务端补图、无头同步
-│  │  ├─ x-favorites.js        X：GraphQL 推文整形、cookie 登录态、无头翻书签页 / 点赞页、CDN 下媒体
-│  │  ├─ social-sync.js        定时调度：每站独立、need_login 记录、after 阶段补媒体
-│  │  └─ browser-profiles.js   持久 profile 排队启动（同一目录同时只开一个 Chrome）
-│  └─ userscripts/           三份油猴脚本（服务端分发时注入地址和令牌）
+│  │  ├─ favorites-archive.js  text archive + media files + magic-number checks + /archive URL encoding
+│  │  ├─ douyin-favorites.js   normalize, ingest, multi-account, folders, music, headless sync, media, expiring links, cover rebuild
+│  │  ├─ weibo-favorites.js    two export shapes, retweet dedupe, unavailable detection, server-side images, headless sync
+│  │  ├─ x-favorites.js        GraphQL tweet shapes, cookie session, headless bookmarks/likes, CDN media
+│  │  ├─ social-sync.js        scheduler: per-site isolation, need_login bookkeeping, media after-phase
+│  │  └─ browser-profiles.js   persistent-profile queue (one Chrome per profile dir) + browser detection
+│  └─ userscripts/           three userscripts (server injects address + token; panel text zh/en)
 ├─ scripts/
-│  ├─ douyin-login-qr.mjs    无头导出抖音登录二维码（服务器没屏幕时用）
-│  ├─ login-x.mjs            有屏幕的电脑上登录 X，把 cookie 投回服务器
-│  ├─ login-site.mjs         在服务器上弹窗口登录微博 / 抖音
-│  ├─ douyin-media-loop.sh   把待下的抖音媒体分批补完（限流自动歇、直链全过期自动重翻）
-│  └─ shot-local.mjs         无头截图页面（排查用）
-├─ public/                   library.html / settings.html + css / js
-├─ test/                     node:test，`npm test`
-├─ data/                     运行时数据（SQLite、登录态 profile、各站状态 json、缩略图缓存），已 gitignore
-└─ ~/FavSync/archive/        存档目录（默认），年/月/站点-标题-link编号/
+│  ├─ douyin-login-qr.mjs    headless QR export for Douyin sign-in (servers without a display)
+│  ├─ login-x.mjs            sign in to X on a machine with a screen, send cookies to the server
+│  ├─ login-site.mjs         open a browser window on the server for Weibo / Douyin
+│  ├─ douyin-media-loop.sh   drain pending Douyin media in batches (auto-rest on rate limit, re-sync when links expire)
+│  └─ shot-local.mjs         headless page screenshot (debugging)
+├─ public/                   library.html / settings.html + css / js (i18n.js holds the zh/en dictionary)
+├─ test/                     node:test — `npm test`
+├─ data/                     runtime data (SQLite, browser profiles, state json, thumbnail cache) — gitignored
+└─ ~/FavSync/archive/        archive root (default): year/month/site-title-linkN/
 ```
 
-存档目录里每条收藏一个文件夹：
+One folder per item inside the archive:
 
 ```
-2026/10/douyin.com-标题-link123/
-├─ readable.md        标题、原始链接、作者、正文、收藏账号、收藏夹
-├─ metadata.json      机器可读的原始字段
-├─ cover.jpg          封面（竖屏视频会用视频帧重做完整画幅）
-├─ cover-anim.webp    动态封面
-├─ video.mp4          视频
-├─ image-01.jpg …     图文原图；动图保留为 image-NN.gif / image-NN.anim.webp
-├─ live-01.mp4 …      实况 / 动图短片
-└─ audio.mp3          配乐 / 收藏的音乐
+2026/10/douyin.com-title-link123/
+├─ readable.md        title, source link, author, text, account, folders
+├─ metadata.json      machine-readable original fields
+├─ cover.jpg          cover (portrait videos get a full-frame cover rebuilt from the video)
+├─ cover-anim.webp    animated cover
+├─ video.mp4
+├─ image-01.jpg …     original photos; GIF / animated WebP kept as image-NN.gif / image-NN.anim.webp
+├─ live-01.mp4 …      live photos / animated clips
+└─ audio.mp3          soundtrack / saved music
 ```
 
-## 环境变量
+## Environment variables
 
-| 变量 | 默认 | 说明 |
+| Variable | Default | Meaning |
 |---|---|---|
-| `PORT` | `3460` | 监听端口 |
-| `FAVSYNC_DATA` | `<项目>/data` | 运行时数据目录 |
-| `FAVSYNC_DB` | `<data>/app.db` | SQLite 文件 |
-| `FAVSYNC_ARCHIVE` | `~/FavSync/archive` | 存档根目录（也可在设置页改，写进 `data/archive.json`） |
-| `FAVSYNC_TOKEN` | 自动生成，存 `data/token.json` | 远程访问 / 油猴脚本 / 登录脚本用的访问令牌 |
-| `FAVSYNC_PUBLIC_URL` | `http://localhost:<PORT>` | 油猴脚本要推送到的地址（服务跑在别的机器上时必填） |
-| `FAVSYNC_SYNC_HOURS` | `12` | 定时同步间隔（小时） |
-| `FAVSYNC_NO_JOBS` | 空 | 设为 `1` 不启动后台任务 |
-| `FAVSYNC_THUMBS` | `<data>/thumbs` | 缩略图缓存目录 |
-| `FAVSYNC_FFMPEG` | `ffmpeg-static` 自带 | 自定义 ffmpeg 路径 |
-| `FAVSYNC_BROWSER_PROFILE` / `FAVSYNC_BROWSER_PROFILES` | `<data>/browser-profile`、`<data>/browser-profiles/` | 默认账号的浏览器 profile / 其它账号的 profile 根目录 |
-| `FAVSYNC_DOUYIN_ACCOUNTS` / `FAVSYNC_SOCIAL_SYNC` / `FAVSYNC_X_SYNC` | `<data>/*.json` | 各状态文件位置（主要给测试隔离用） |
+| `PORT` | `3460` | listen port |
+| `FAVSYNC_DATA` | `<project>/data` | runtime data directory |
+| `FAVSYNC_DB` | `<data>/app.db` | SQLite file |
+| `FAVSYNC_ARCHIVE` | `~/FavSync/archive` | archive root (also changeable in Settings, stored in `data/archive.json`) |
+| `FAVSYNC_TOKEN` | generated, stored in `data/token.json` | access token for remote access / userscripts / login scripts |
+| `FAVSYNC_PUBLIC_URL` | `http://localhost:<PORT>` | address userscripts push to and the pairing QR encodes (required when the server is another machine) |
+| `FAVSYNC_SYNC_HOURS` | `12` | scheduled sync interval |
+| `FAVSYNC_NO_JOBS` | unset | `1` disables background jobs |
+| `FAVSYNC_THUMBS` | `<data>/thumbs` | thumbnail cache |
+| `FAVSYNC_FFMPEG` | bundled `ffmpeg-static` | custom ffmpeg path |
+| `FAVSYNC_BROWSER_PROFILE` / `FAVSYNC_BROWSER_PROFILES` | `<data>/browser-profile`, `<data>/browser-profiles/` | default account profile / root for other accounts' profiles |
+| `FAVSYNC_DOUYIN_ACCOUNTS` / `FAVSYNC_SOCIAL_SYNC` / `FAVSYNC_X_SYNC` | `<data>/*.json` | state file locations (mainly for test isolation) |
 
-## API 一览
+## API
 
-本机免验证；远程带 `Authorization: Bearer <token>` 或 `?token=`。标「令牌」的接口即使在本机也必须带令牌（防止任意网页往 localhost 灌数据）。
+No auth on the server itself; remote callers send `Authorization: Bearer <token>` or `?token=`. Endpoints marked **token** require the token even locally (so that arbitrary web pages cannot push into localhost).
 
-**收藏库**
-- `GET /api/library?tag=&exclude_tag=&source=&media=&q=&limit=&offset=` → `{stats, tags, items[]}`（每条带 `archive.{dir, files}`）
-- `GET /api/library/items/:id` · `PATCH /api/library/items/:id {title, note}` · `DELETE /api/library/items/:id`（只删记录，不删文件）
+**Library**
+- `GET /api/library?tag=&exclude_tag=&source=&media=&q=&limit=&offset=` → `{stats, tags, items[]}` (each item carries `archive.{dir, files}`)
+- `GET /api/library/items/:id` · `PATCH /api/library/items/:id {title, note}` · `DELETE /api/library/items/:id` (record only, files kept)
 - `POST /api/library/tags {item_id, tags}`
-- `GET /api/archive` · `POST /api/archive/root {root}` · `POST /api/archive/index`（生成静态索引页）· `POST /api/archive/flag-anim`
-- `GET /thumb/<存档相对路径>?w=400` 缩略图 · `GET /archive/...` 存档文件 · `GET /api/events` SSE
+- `GET /api/archive` · `POST /api/archive/root {root}` · `POST /api/archive/index` (write static index) · `POST /api/archive/flag-anim`
+- `GET /thumb/<archive-relative-path>?w=400` · `GET /archive/...` · `GET /api/events` (SSE)
 
-**抖音**
-- `POST /api/douyin/push {items, music, account, folders}`（令牌）· `GET /api/douyin/pending`（令牌）· `POST /api/douyin/media/:awemeId?kind=cover|anim|video|image|live|audio&index=`（令牌，octet-stream）· `POST /api/douyin/media/:awemeId/failed`（令牌）
+**Auth**
+- `GET /api/health` · `GET /api/auth/whoami` → `{local, browser, public_url}`
+- `GET /api/auth/token` (local only) → `{token, pair_url, qr}` · `POST /api/auth/token/reset` (local only) · `GET /api/qr?text=`
+
+**Douyin**
+- `POST /api/douyin/push {items, music, account, folders}` (token) · `GET /api/douyin/pending` (token) · `POST /api/douyin/media/:awemeId?kind=cover|anim|video|image|live|audio&index=` (token, octet-stream) · `POST /api/douyin/media/:awemeId/failed` (token)
 - `GET /api/douyin/status` · `POST /api/douyin/sync {account:'all'|id, mode:'all'|'folders', full, max_items, media_limit, video, skip_list, max_ms}` · `POST /api/douyin/fix-covers`
 - `GET /api/douyin/accounts` · `DELETE /api/douyin/accounts/:id` · `POST /api/douyin/login/start {account?}` · `GET /api/douyin/login/status?account=` → `{state: starting|qr|logged_in|timeout|error, qr}`
 
-**微博**
-- `POST /api/weibo/push {items}`（令牌）· `GET /api/weibo/pending`（令牌）· `POST /api/weibo/media/:weiboId?kind=&index=`（令牌）· `POST /api/weibo/media/:weiboId/failed`（令牌）
-- `GET /api/weibo/status` · `POST /api/weibo/import {path, include_own}`（本机）· `POST /api/weibo/media/fetch {limit}`
+**Weibo**
+- `POST /api/weibo/push {items}` (token) · `GET /api/weibo/pending` (token) · `POST /api/weibo/media/:weiboId?kind=&index=` (token) · `POST /api/weibo/media/:weiboId/failed` (token)
+- `GET /api/weibo/status` · `POST /api/weibo/import {path, include_own}` (local) · `POST /api/weibo/media/fetch {limit}`
 
 **X**
-- `POST /api/x/push {items, kind:'like'|'bookmark', account}`（令牌）· `GET /api/x/status` · `POST /api/x/import {path, kind, account}`（本机）· `POST /api/x/media/fetch`
-- `POST /api/x/ticket` → 口令 · `POST /x-login {code, cookies, handle}`（登录脚本调用，不在 /api 下）· `POST /api/x/sync {full}` · `POST /api/x/logout`
+- `POST /api/x/push {items, kind:'like'|'bookmark', account}` (token) · `GET /api/x/status` · `POST /api/x/import {path, kind, account}` (local) · `POST /api/x/media/fetch`
+- `POST /api/x/ticket` → code · `POST /x-login {code, cookies, handle}` (called by the login script; outside /api) · `POST /api/x/sync {full}` · `POST /api/x/logout`
 
-**定时 / 脚本**
-- `GET /api/social/status` · `POST /api/social/sync {sites, full, force}` · `POST /api/social/settings {douyin_enabled, weibo_enabled, x_enabled}` · `POST /api/social/login {site}`（本机，弹窗口）
-- `POST /api/userscript/install-link {script: douyin|weibo|x}` → 24 小时安装链接 · `GET /install/:code/<name>.user.js`
+**Schedule / userscripts**
+- `GET /api/social/status` · `POST /api/social/sync {sites, full, force}` · `POST /api/social/settings {douyin_enabled, weibo_enabled, x_enabled}` · `POST /api/social/login {site}` (local, opens a window)
+- `POST /api/userscript/install-link {script: douyin|weibo|x}` → 24-hour install link · `GET /install/:code/<name>.user.js`
 
-## 常见问题
+## FAQ
 
-**抖音媒体一直 `stale` / 下不动？** 直链过期了（视频 CDN 路径里带过期时间，图床用 `x-expires`），正常。重跑一次列表或收藏夹同步（`POST /api/douyin/sync {mode:'folders', media_limit:0}`）刷新地址再补。`scripts/douyin-media-loop.sh` 会自动做这件事。
+**Douyin media stays `stale` / does not download.** The direct links expired (the video CDN path carries an expiry; image hosts use `x-expires`). That is normal: run a list or folder sync again (`POST /api/douyin/sync {mode:'folders', media_limit:0}`) to refresh the URLs, then fetch. `scripts/douyin-media-loop.sh` does this automatically.
 
-**封面 / 下载回 403？** 要么登录态过期（设置页会亮红字，重新扫码），要么被限流了——同步器已经停下了，歇几个小时再来，别缩短间隔。图床的图在卡片上直连显示需要 `referrerpolicy=no-referrer`，页面已经带了。
+**Covers / downloads return 403.** Either the session expired (Settings shows it in red — scan again) or you were rate-limited; the sync already stopped. Wait a few hours; do not shorten the interval. Remote images on cards use `referrerpolicy=no-referrer` to get past hotlink protection.
 
-**无头的服务器没有屏幕，怎么登录？** 抖音：设置页「添加抖音账号」会把二维码导出来显示在网页上，手机扫。X：拿口令后在任何有屏幕的电脑上跑 `scripts/login-x.mjs`，cookie 会发回服务器。微博：目前需要在服务器上弹一次窗口（有 VNC / 远程桌面也行），或者改用油猴脚本 / 导入 Weibo-archiver 的导出。
+**My server has no display. How do I sign in?** Douyin: "Add account" shows the QR code in the web page — scan it with the app. X: get a code, run `scripts/login-x.mjs` on any machine with a screen; the cookies are sent back. Weibo: currently needs a browser window on the server (VNC / remote desktop works), or use the userscript / import a Weibo-archiver export.
 
-**油猴脚本装不上 / 推不过去？** 脚本文件里带着令牌，所以只能在服务器本机下载，或用设置页生成的 24 小时安装链接。服务跑在别的机器上时要设 `FAVSYNC_PUBLIC_URL`，再重新安装脚本。
+**The userscript will not install / cannot push.** The script embeds your token, so it is only served to the server itself or through the 24-hour install link from Settings. When the server is another machine, set `FAVSYNC_PUBLIC_URL` first, then reinstall.
 
-**收藏库里封面一片白？** 存档路径含中文和 `#`，必须按段 URL 编码；启动时会幂等地把库里旧的 `/archive/...` 路径统一成只编码一层。
+**Covers are blank in the library.** Archive paths contain non-ASCII characters and `#` and must be URL-encoded per segment; on startup FavSync idempotently normalizes old `/archive/...` paths in the database to exactly one level of encoding.
 
-**同一个 Chrome profile 报"开不了浏览器"？** 同一目录同时只能开一个实例，`browser-profiles.js` 会排队等上一个关掉；等 10 分钟还没空出来才报错。
+**"Cannot open the browser" with the same Chrome profile.** Only one Chrome instance can use a profile directory; `browser-profiles.js` queues launches and waits for the previous one to close (up to 10 minutes) before giving up.
 
-**竖屏视频封面上下被裁？** 抖音接口的 `cover` 是 323:430 居中裁的，`origin_cover` 才是完整画幅；没有 `origin_cover` 时，视频下好后会自动用 ffmpeg 从视频抽一帧重做封面（设置页也有「修复裁切封面」按钮）。
+**Portrait video covers are cropped.** Douyin's API `cover` is a 323:430 center crop; `origin_cover` is full-frame. When only the cropped one exists, a full-frame cover is rebuilt from the downloaded video with ffmpeg (Settings also has a "Fix cropped covers" button).
 
-## 开发
+**Port already in use / wrong Node version.** The server prints a clear message and exits: set `PORT=xxxx`, or upgrade to Node ≥ 22.5. If no Chrome / Edge is found, Settings shows a warning on every card that needs a browser.
+
+## Development
 
 ```bash
-npm test                       # node:test，全部离线、用临时库
-FAVSYNC_NO_JOBS=1 npm start    # 不跑后台任务
-node scripts/shot-local.mjs http://localhost:3460/library.html out.png   # 无头截图
+npm test                       # node:test, fully offline, temporary databases
+FAVSYNC_NO_JOBS=1 npm start    # without background jobs
+node scripts/shot-local.mjs http://localhost:3460/library.html out.png   # headless screenshot
 ```
 
-抖音 / 微博 / X 的接口形状变了，先改对应 connector 里的 `normalize*` 和 `*_RE`；测试里的 fixture 就是实测过的形状。
+When a platform changes its response shape, adjust `normalize*` and the `*_RE` patterns in the matching connector; the test fixtures are real-world shapes. UI strings live in `public/js/i18n.js`; a test checks that the zh and en dictionaries have identical keys.
 
-## 致谢
+## Credits
 
-- [Eagle](https://eagle.cool/)、[TagStudio](https://github.com/TagStudioDev/TagStudio)、[karakeep](https://github.com/karakeep-app/karakeep)：收藏库三栏布局、标签为主的分类、瀑布流 / 网格 / 列表切换的思路。
-- [ArchiveBox](https://github.com/ArchiveBox/ArchiveBox)：多格式冗余、普通文件、脱离工具可读的存档原则。
-- [DouyinDataReview](https://github.com/ZhangYukwiver/DouyinDataReview)：「不把采集时间当真实时间」——发布时间、收藏时间、同步时间分开记。
-- [Weibo-archiver](https://github.com/Chilfish/Weibo-archiver)：微博收藏接口与 mblog 字段的整理；FavSync 能直接导入它的导出文件。
-- [twitter-web-exporter](https://github.com/prinsss/twitter-web-exporter)：X 导出 JSON 的形状。
+- [Eagle](https://eagle.cool/), [TagStudio](https://github.com/TagStudioDev/TagStudio), [karakeep](https://github.com/karakeep-app/karakeep): the three-pane library layout, tag-first organization, masonry / grid / list views.
+- [ArchiveBox](https://github.com/ArchiveBox/ArchiveBox): redundant formats, plain files, archives that remain readable without the tool.
+- [DouyinDataReview](https://github.com/ZhangYukwiver/DouyinDataReview): "never treat collection time as the real time" — publish time, favorite time and sync time are kept apart.
+- [Weibo-archiver](https://github.com/Chilfish/Weibo-archiver): the Weibo favorites endpoint and mblog field notes; FavSync imports its export files directly.
+- [twitter-web-exporter](https://github.com/prinsss/twitter-web-exporter): the shape of X export JSON.
 
 MIT License · © CorCvusRamboChen
-
----
-
-## English summary
-
-**FavSync** is a self-hosted, single-user archiver for your own favorites on **Douyin** (collections, collection folders, saved music; multi-account), **Weibo** (favorites) and **X/Twitter** (likes + bookmarks). It logs in once (Douyin via a QR code rendered in the web UI so headless servers work; X via a one-time ticket and a helper script run on any machine with a screen; Weibo via a browser window on the server, an import of Weibo-archiver JSON, or a userscript), then syncs every 12 hours and stores every item as **plain files on disk**: `readable.md`, `metadata.json`, cover, original images (GIF/animated WebP kept as-is), live-photo clips, `video.mp4`, `audio.mp3`. Items deleted upstream are never deleted locally. A three-pane library UI (filters / masonry / inspector, with ffmpeg-cached thumbnails and a built-in lightbox) and a static `index.html` in the archive root let you browse everything, even without the app.
-
-Anti-ban rules are built in: zero extra API calls (it only listens to responses the page itself makes), human-paced scrolling and downloads, stop immediately on 403/429/captcha, skip expired CDN links instead of hammering them. Requires Node ≥ 22.5 (built-in `node:sqlite`) and a locally installed Chrome/Edge; ffmpeg ships with `ffmpeg-static`. `npm install && npm start`, then open `http://localhost:3460/settings.html`.

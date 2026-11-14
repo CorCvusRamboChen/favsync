@@ -205,3 +205,29 @@ aside.eg-insp { padding:0; }
 .eg-lb-stage video { will-change:auto; }
 /* 放大播放器开着时侧栏/顶栏不做毛玻璃，省掉每帧重算 */
 body:has(.eg-lb.on) aside, body:has(.eg-lb.on) .pg-top { backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }
+
+/* ——— 空库引导卡 ——— */
+.eg-ob { column-span:all; max-width:520px; margin:60px auto; text-align:center; padding:28px 24px; background:var(--panel); border:1px solid var(--line); border-radius:var(--r-l); box-shadow:var(--sh); }
+.eg-ob .ob-ic { width:52px; height:52px; margin:0 auto 10px; border-radius:16px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; }
+.eg-ob .ob-ic svg.ic { width:26px; height:26px; }
+.eg-ob h3 { font-size:17px; margin:0 0 6px; }
+.eg-ob p { color:var(--dim); font-size:13px; margin:0 0 16px; line-height:1.6; }
+.ob-plats { display:grid; gap:8px; margin-bottom:16px; text-align:left; }
+.ob-plat { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--r-m); color:var(--text); text-decoration:none; font-size:13px; background:var(--panel2); }
+.ob-plat:hover { border-color:var(--accent); }
+.ob-plat > svg.ic:first-child { width:18px; height:18px; }
+.ob-plat span { flex:1; }
+.ob-plat > svg.ic:last-child { color:var(--dim); width:14px; height:14px; }
+/* 角标 / 导航里的内联图标尺寸 */
+.eg-kind svg.ic, .eg-badge svg.ic { width:11px; height:11px; vertical-align:-1px; }
+.eg-nav .ic svg.ic { width:14px; height:14px; }
+.eg-play svg.ic { width:18px; height:18px; }
+.eg-insp .x svg.ic { width:14px; height:14px; }
+.eg-arc .acts .btn-s { padding:0 8px; min-height:28px; font-size:11.5px; }
+.eg-lb-stage .aud .disc svg.ic { width:80px; height:80px; color:#fff; opacity:.8; }
+.eg-lb-bar .btn-s { color:#fff; background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.25); }
+.eg-lb-bar .btn-s:hover { background:rgba(255,255,255,.2); }
+.eg-rail h5 { margin-top:16px; }
+@media (max-width:768px) { .eg-ob { margin:24px auto; } }
+/* 手机：瀑布流两列（要放在 --card-w 那条之后才生效） */
+@media (max-width:768px) { .eg-grid.masonry { columns:2; column-gap:10px; } .eg-grid.grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }

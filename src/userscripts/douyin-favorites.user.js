@@ -33,6 +33,119 @@
 // 动图：图文帖的每张图同时记原图地址（download_url_list，动图就是动图）和实况短片地址，服务端按原样存。
 (function () {
   'use strict';
+  // —— 面板文案 zh / en（按浏览器语言）——
+  const LANG = /^zh/i.test(navigator.language || '') ? 'zh' : 'en';
+  const T = {
+    "zh": {
+      "title": "FavSync · 抖音收藏",
+      "acct": "账号：{n}",
+      "acct_none": "账号：还没认出来（进「我的」页就有）",
+      "folders": " · 收藏夹 {n} 个",
+      "got": "抄到 <b>{v}</b> 条视频",
+      "music": " + <b>{m}</b> 首音乐",
+      "pushed": " · 已推送 <b>{p}</b> 条",
+      "media": " · 媒体 {ok}✓",
+      "mediafail": " {f}✗",
+      "stop": "停下",
+      "trial": "先试 20 条",
+      "start": "全部收藏",
+      "push": "推送 {n} 条",
+      "savemedia": "存媒体文件",
+      "opt_media": "存封面/动图/图文到本机",
+      "opt_video": "视频文件也存（流量大，慢）",
+      "hint_ready": "页面已经在翻收藏了，点上面开始",
+      "hint_open": "打开「我的 → 收藏」（视频 / 音乐 tab 都行，进收藏夹也行），再点上面开始",
+      "blocked": "抖音接口回了 {s}",
+      "blocked_stop": "抖音开始限流（{s}），已停下。过几个小时再来，别硬刷",
+      "pushed_msg": "已推送 {p} 条（新 {a}）",
+      "push_fail": "推送失败：{e}",
+      "trial_msg": "先试 20 条：慢慢翻，别动这个标签页",
+      "scrolling": "自动翻页中（最多 {cap} 条）…别动这个标签页",
+      "captcha": "页面出现验证码，已停下。你手动过一下验证，过会儿再来",
+      "cap_hit": "到 {cap} 条上限了，先停",
+      "rest": "歇一下（已抄到 {n} 条）…",
+      "bottom": "翻到底了",
+      "idle": "15 秒没有新条目，可能到底了",
+      "stopped": "已停下",
+      "media_cap": "这次先存 {cap} 条媒体，下次接着存",
+      "media_captcha": "页面出现验证码，媒体下载先停",
+      "media_blocked": "抖音限流中（{b}），媒体下载先停。过几个小时再来",
+      "media_item": "存媒体文件 {i}/{cap}：{id}",
+      "media_rest": "歇一下（已存 {n} 条）…",
+      "media_streak": "下载连续失败，像是被限流，先停。过几个小时再试",
+      "media_done": "媒体文件：这次存好 {ok} 条",
+      "media_done_fail": "，失败 {f} 条（下次重试，最多 3 次）",
+      "media_err": "媒体阶段出错：{e}",
+      "no_audio": "没有音频地址",
+      "video_off": "设置里关了视频下载",
+      "no_media": "没有可下载的媒体地址",
+      "wall": " 内容像登录墙",
+      "conn_fail": "连不上 FavSync（它开着吗？）",
+      "bad_json": "FavSync 返回了非 JSON：{s}",
+      "timeout": "FavSync 响应超时",
+      "m_trial": "抖音收藏：先试 20 条",
+      "m_all": "抖音收藏：全部收藏",
+      "m_media": "抖音收藏：只存媒体文件",
+      "m_cap": "抖音收藏：设置每次上限",
+      "p_cap": "每次最多翻多少条收藏？（默认 300）",
+      "p_mcap": "每次最多存多少条媒体？（默认 40）"
+    },
+    "en": {
+      "title": "FavSync · Douyin favorites",
+      "acct": "Account: {n}",
+      "acct_none": "Account: not detected yet (open your profile page)",
+      "folders": " · {n} folders",
+      "got": "Collected <b>{v}</b> videos",
+      "music": " + <b>{m}</b> songs",
+      "pushed": " · pushed <b>{p}</b>",
+      "media": " · media {ok}✓",
+      "mediafail": " {f}✗",
+      "stop": "Stop",
+      "trial": "Try first 20",
+      "start": "All favorites",
+      "push": "Push {n}",
+      "savemedia": "Save media",
+      "opt_media": "Save covers / GIFs / photos locally",
+      "opt_video": "Also save video files (slow, large)",
+      "hint_ready": "The page is already loading favorites — click above to start",
+      "hint_open": "Open Me → Collection (video or music tab, or a folder), then click above",
+      "blocked": "Douyin API returned {s}",
+      "blocked_stop": "Douyin is rate-limiting ({s}); stopped. Come back in a few hours",
+      "pushed_msg": "Pushed {p} ({a} new)",
+      "push_fail": "Push failed: {e}",
+      "trial_msg": "Trying 20 items: scrolling slowly, leave this tab alone",
+      "scrolling": "Auto-scrolling (up to {cap})… leave this tab alone",
+      "captcha": "A captcha appeared; stopped. Solve it manually and come back later",
+      "cap_hit": "Reached the {cap} limit; stopping for now",
+      "rest": "Resting (collected {n})…",
+      "bottom": "Reached the end",
+      "idle": "Nothing new for 15 s — probably the end",
+      "stopped": "Stopped",
+      "media_cap": "Saved {cap} media items this round; the rest next time",
+      "media_captcha": "Captcha appeared; media download paused",
+      "media_blocked": "Rate-limited ({b}); media download paused. Come back in a few hours",
+      "media_item": "Saving media {i}/{cap}: {id}",
+      "media_rest": "Resting (saved {n})…",
+      "media_streak": "Repeated download failures — looks like rate limiting, stopping. Try again in a few hours",
+      "media_done": "Media: saved {ok} this round",
+      "media_done_fail": ", {f} failed (retried next time, up to 3)",
+      "media_err": "Media phase error: {e}",
+      "no_audio": "no audio URL",
+      "video_off": "video download disabled in settings",
+      "no_media": "no downloadable media URL",
+      "wall": " looks like a login wall",
+      "conn_fail": "Cannot reach FavSync (is it running?)",
+      "bad_json": "FavSync returned non-JSON: {s}",
+      "timeout": "FavSync timed out",
+      "m_trial": "Douyin favorites: try first 20",
+      "m_all": "Douyin favorites: all",
+      "m_media": "Douyin favorites: save media only",
+      "m_cap": "Douyin favorites: set limits",
+      "p_cap": "Max favorites per run? (default 300)",
+      "p_mcap": "Max media items per run? (default 40)"
+    }
+  };
+  const L = (k, v) => { let s = (T[LANG] && T[LANG][k]) || T.zh[k] || k; if (v) for (const [a, b] of Object.entries(v)) s = s.split('{' + a + '}').join(String(b)); return s; };
   const SERVER = '__SERVER__';
   const TOKEN = '__TOKEN__';
   const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
@@ -103,7 +216,7 @@
     if (u && (u.uid || u.nickname)) { account = { uid: String(u.uid ?? u.sec_uid ?? ''), nickname: String(u.nickname ?? '') }; paint(); }
   }
   function sniff(url, status, text) {
-    if ((status === 403 || status === 429) && ANY_API_RE.test(url)) { blocked = `抖音接口回了 ${status}`; stopScroll('抖音开始限流（' + status + '），已停下。过几个小时再来，别硬刷'); return; }
+    if ((status === 403 || status === 429) && ANY_API_RE.test(url)) { blocked = L('blocked', { s: status }); stopScroll(L('blocked_stop', { s: status })); return; }
     if (!text) return;
     if (LIST_RE.test(url)) absorbList(text, url);
     else if (MUSIC_RE.test(url)) absorbMusic(text);
@@ -135,8 +248,8 @@
       method, url: SERVER + path, timeout: 120000,
       headers: { Authorization: 'Bearer ' + TOKEN, ...(body instanceof ArrayBuffer ? { 'Content-Type': 'application/octet-stream' } : body ? { 'Content-Type': 'application/json' } : {}) },
       data: body instanceof ArrayBuffer ? body : body ? JSON.stringify(body) : undefined,
-      onload: (r) => { try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error('FavSync 返回了非 JSON：' + r.status)); } },
-      onerror: () => reject(new Error('连不上 FavSync（它开着吗？）')), ontimeout: () => reject(new Error('FavSync 响应超时')),
+      onload: (r) => { try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error(L('bad_json', { s: r.status }))); } },
+      onerror: () => reject(new Error(L('conn_fail'))), ontimeout: () => reject(new Error(L('timeout'))),
     }));
   }
   async function pushBatch() {
@@ -148,8 +261,8 @@
     try {
       const r = await api('POST', '/api/douyin/push', { items, music, account, folders });
       pushed += r.added + r.updated;
-      say(`已推送 ${pushed} 条（新 ${r.added}）${account?.nickname ? ' · 账号 ' + account.nickname : ''}`);
-    } catch (e) { pendingPush.unshift(...items); pendingMusic.unshift(...music); say('推送失败：' + e.message, true); }
+      say(L('pushed_msg', { p: pushed, a: r.added }) + (account?.nickname ? ' · ' + account.nickname : ''));
+    } catch (e) { pendingPush.unshift(...items); pendingMusic.unshift(...music); say(L('push_fail', { e: e.message }), true); }
     paint();
   }
 
@@ -166,18 +279,18 @@
     if (scrolling) return;
     cap = trial ? 20 : cfg('fs_cap', 300);
     scrolling = true; blocked = null; scrollRounds = 0; lastNewAt = Date.now();
-    say(trial ? '先试 20 条：慢慢翻，别动这个标签页' : `自动翻页中（最多 ${cap} 条）…别动这个标签页`);
+    say(trial ? L('trial_msg') : L('scrolling', { cap }));
     paint();
     while (scrolling) {
-      if (captchaShowing()) { stopScroll('页面出现验证码，已停下。你手动过一下验证，过会儿再来'); break; }
-      if (seen.size + musicSeen.size >= cap) { stopScroll(`到 ${cap} 条上限了，先停`); break; }
+      if (captchaShowing()) { stopScroll(L('captcha')); break; }
+      if (seen.size + musicSeen.size >= cap) { stopScroll(L('cap_hit', { cap })); break; }
       scrollMore();
       scrollRounds++;
       await sleep(rand(1800, 3500));
-      if (scrollRounds % 8 === 0) { say(`歇一下（已抄到 ${seen.size} 条）…`); await sleep(rand(5000, 10000)); }
+      if (scrollRounds % 8 === 0) { say(L('rest', { n: seen.size })); await sleep(rand(5000, 10000)); }
       if (!scrolling) break;
-      if (!hasMore) { stopScroll('翻到底了'); break; }
-      if (Date.now() - lastNewAt > 15000) { stopScroll('15 秒没有新条目，可能到底了'); break; }
+      if (!hasMore) { stopScroll(L('bottom')); break; }
+      if (Date.now() - lastNewAt > 15000) { stopScroll(L('idle')); break; }
     }
     await pushBatch();
     if (!blocked) await mediaPhase(trial ? 10 : null);
@@ -200,7 +313,7 @@
   const put = async (id, kind, url, index) => {
     if (!url) return false;
     const r = await api('POST', `/api/douyin/media/${id}?kind=${kind}${index != null ? '&index=' + index : ''}`, await download(url));
-    if (r.suspicious) throw new Error(kind + ' 内容像登录墙');
+    if (r.suspicious) throw new Error(kind + L('wall'));
     await sleep(rand(1000, 3000));
     return true;
   };
@@ -214,17 +327,17 @@
         const { items } = await api('GET', '/api/douyin/pending?limit=6');
         if (!items?.length) break;
         for (const it of items) {
-          if (count >= mediaCap) { say(`这次先存 ${mediaCap} 条媒体，下次接着存`); break outer; }
-          if (captchaShowing()) { say('页面出现验证码，媒体下载先停', true); break outer; }
-          if (blocked) { say('抖音限流中（' + blocked + '），媒体下载先停。过几个小时再来', true); streak = 99; break outer; }
-          say(`存媒体文件 ${count + 1}/${mediaCap}：${it.aweme_id}`);
+          if (count >= mediaCap) { say(L('media_cap', { cap: mediaCap })); break outer; }
+          if (captchaShowing()) { say(L('media_captcha'), true); break outer; }
+          if (blocked) { say(L('media_blocked', { b: blocked }), true); streak = 99; break outer; }
+          say(L('media_item', { i: count + 1, cap: mediaCap, id: it.aweme_id }));
           try {
             await put(it.aweme_id, 'cover', it.cover_url);
-            if (it.kind === 'music') { if (it.play_url) await put(it.aweme_id, 'audio', it.play_url); else await api('POST', `/api/douyin/media/${it.aweme_id}/failed`, { error: '没有音频地址' }); mediaDone++; streak = 0; count++; paint(); continue; }
+            if (it.kind === 'music') { if (it.play_url) await put(it.aweme_id, 'audio', it.play_url); else await api('POST', `/api/douyin/media/${it.aweme_id}/failed`, { error: L('no_audio') }); mediaDone++; streak = 0; count++; paint(); continue; }
             await put(it.aweme_id, 'anim', it.dynamic_cover_url);
             if (it.play_url) {
               if (wantVideo()) await put(it.aweme_id, 'video', it.play_url);
-              else await api('POST', `/api/douyin/media/${it.aweme_id}/failed`, { error: '设置里关了视频下载' });
+              else await api('POST', `/api/douyin/media/${it.aweme_id}/failed`, { error: L('video_off') });
             } else {
               const vs = it.variants?.length ? it.variants : (it.images ?? []).map((u) => ({ static: u }));
               for (let i = 0; i < vs.length; i++) {
@@ -233,21 +346,21 @@
                 catch (e) { if (vs[i].original && vs[i].static) await put(it.aweme_id, 'image', vs[i].static, i); else throw e; }
                 if (vs[i].live) { try { await put(it.aweme_id, 'live', vs[i].live, i); } catch { /* 实况是加分项 */ } }
               }
-              if (!vs.length) await api('POST', `/api/douyin/media/${it.aweme_id}/failed`, { error: '没有可下载的媒体地址' });
+              if (!vs.length) await api('POST', `/api/douyin/media/${it.aweme_id}/failed`, { error: L('no_media') });
             }
             mediaDone++; streak = 0;
           } catch (e) {
             mediaFail++; streak++;
             await api('POST', `/api/douyin/media/${it.aweme_id}/failed`, { error: e.message }).catch(() => {});
-            if (/HTTP (403|429)/.test(e.message) || streak >= 3) { say('下载连续失败，像是被限流，先停。过几个小时再试', true); break outer; }
+            if (/HTTP (403|429)/.test(e.message) || streak >= 3) { say(L('media_streak'), true); break outer; }
           }
           count++;
-          if (count % 10 === 0) { say(`歇一下（已存 ${count} 条）…`); await sleep(rand(8000, 15000)); }
+          if (count % 10 === 0) { say(L('media_rest', { n: count })); await sleep(rand(8000, 15000)); }
           paint();
         }
       }
-      if (streak < 3 && !blocked) say(`媒体文件：这次存好 ${mediaDone} 条${mediaFail ? `，失败 ${mediaFail} 条（下次重试，最多 3 次）` : ''}`);
-    } catch (e) { say('媒体阶段出错：' + e.message, true); }
+      if (streak < 3 && !blocked) say(L('media_done', { ok: mediaDone }) + (mediaFail ? L('media_done_fail', { f: mediaFail }) : ''));
+    } catch (e) { say(L('media_err', { e: e.message }), true); }
     finally { mediaRunning = false; paint(); }
   }
 
@@ -267,26 +380,26 @@
     box.style.display = '';
     const btn = (label, fn, primary) => `<button data-fn="${fn}" style="border:0;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:12px;${primary ? 'background:#fafafa;color:#000' : 'background:rgba(255,255,255,.14);color:#fafafa'}">${label}</button>`;
     const folders = new Set(); for (const s of folderOf.values()) for (const f of s) folders.add(f);
-    box.innerHTML = `<div style="font-weight:600;margin-bottom:2px">FavSync · 抖音收藏</div>
-      <div style="opacity:.75;font-size:11.5px">${account?.nickname ? '账号：' + account.nickname : '账号：还没认出来（进「我的」页就有）'}${folders.size ? ' · 收藏夹 ' + folders.size + ' 个' : ''}</div>
-      <div style="opacity:.8;margin-top:2px">抄到 <b>${seen.size}</b> 条视频${musicSeen.size ? ` + <b>${musicSeen.size}</b> 首音乐` : ''} · 已推送 <b>${pushed}</b> 条${mediaDone || mediaFail ? ` · 媒体 ${mediaDone}✓${mediaFail ? ' ' + mediaFail + '✗' : ''}` : ''}</div>
-      <div style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap">${scrolling ? btn('⏸ 停下', 'stop') : btn('🧪 先试 20 条', 'trial', true) + btn('▶ 全部收藏', 'start')}${(pendingPush.length + pendingMusic.length) && !scrolling ? btn(`⬆ 推送 ${pendingPush.length + pendingMusic.length} 条`, 'push') : ''}${!scrolling && !mediaRunning ? btn('存媒体文件', 'media') : ''}</div>
-      <label style="display:flex;gap:6px;align-items:center;opacity:.85"><input type="checkbox" data-fn="media-toggle" ${wantMedia() ? 'checked' : ''}> 存封面/动图/图文到本机</label>
-      <label style="display:flex;gap:6px;align-items:center;opacity:.85"><input type="checkbox" data-fn="video-toggle" ${wantVideo() ? 'checked' : ''}> 视频文件也存（流量大，慢）</label>
-      <div style="margin-top:6px;color:${bad ? '#ff9a8a' : 'rgba(250,250,250,.7)'}">${msg || (listHits ? '页面已经在翻收藏了，点上面开始' : '打开「我的 → 收藏」（视频 / 音乐 tab 都行，进收藏夹也行），再点上面开始')}</div>`;
+    box.innerHTML = `<div style="font-weight:600;margin-bottom:2px">${L('title')}</div>
+      <div style="opacity:.75;font-size:11.5px">${account?.nickname ? L('acct', { n: account.nickname }) : L('acct_none')}${folders.size ? L('folders', { n: folders.size }) : ''}</div>
+      <div style="opacity:.8;margin-top:2px">${L('got', { v: seen.size })}${musicSeen.size ? L('music', { m: musicSeen.size }) : ''}${L('pushed', { p: pushed })}${mediaDone || mediaFail ? L('media', { ok: mediaDone }) + (mediaFail ? L('mediafail', { f: mediaFail }) : '') : ''}</div>
+      <div style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap">${scrolling ? btn(L('stop'), 'stop') : btn(L('trial'), 'trial', true) + btn(L('start'), 'start')}${(pendingPush.length + pendingMusic.length) && !scrolling ? btn(L('push', { n: pendingPush.length + pendingMusic.length }), 'push') : ''}${!scrolling && !mediaRunning ? btn(L('savemedia'), 'media') : ''}</div>
+      <label style="display:flex;gap:6px;align-items:center;opacity:.85"><input type="checkbox" data-fn="media-toggle" ${wantMedia() ? 'checked' : ''}> ${L('opt_media')}</label>
+      <label style="display:flex;gap:6px;align-items:center;opacity:.85"><input type="checkbox" data-fn="video-toggle" ${wantVideo() ? 'checked' : ''}> ${L('opt_video')}</label>
+      <div style="margin-top:6px;color:${bad ? '#ff9a8a' : 'rgba(250,250,250,.7)'}">${msg || (listHits ? L('hint_ready') : L('hint_open'))}</div>`;
     box.querySelectorAll('[data-fn]').forEach((el) => {
       const fn = el.dataset.fn;
       if (fn === 'media-toggle') el.onchange = () => GM_setValue('fs_media', el.checked);
       else if (fn === 'video-toggle') el.onchange = () => GM_setValue('fs_video', el.checked);
-      else el.onclick = () => ({ trial: () => startScroll(true), start: () => startScroll(false), stop: () => stopScroll('已停下'), push: pushBatch, media: () => mediaPhase() })[fn]?.();
+      else el.onclick = () => ({ trial: () => startScroll(true), start: () => startScroll(false), stop: () => stopScroll(L('stopped')), push: pushBatch, media: () => mediaPhase() })[fn]?.();
     });
   }
   const boot = () => { paint(); setInterval(() => { accountFromDom(); paint(); }, 4000); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
   try {
-    GM_registerMenuCommand('抖音收藏：先试 20 条', () => startScroll(true));
-    GM_registerMenuCommand('抖音收藏：全部收藏', () => startScroll(false));
-    GM_registerMenuCommand('抖音收藏：只存媒体文件', () => mediaPhase());
-    GM_registerMenuCommand('抖音收藏：设置每次上限', () => { const v = Number(prompt('每次最多翻多少条收藏？（默认 300）', String(cfg('fs_cap', 300)))); if (v > 0) GM_setValue('fs_cap', v); const m = Number(prompt('每次最多存多少条媒体？（默认 40）', String(cfg('fs_media_cap', 40)))); if (m > 0) GM_setValue('fs_media_cap', m); });
+    GM_registerMenuCommand(L('m_trial'), () => startScroll(true));
+    GM_registerMenuCommand(L('m_all'), () => startScroll(false));
+    GM_registerMenuCommand(L('m_media'), () => mediaPhase());
+    GM_registerMenuCommand(L('m_cap'), () => { const v = Number(prompt(L('p_cap'), String(cfg('fs_cap', 300)))); if (v > 0) GM_setValue('fs_cap', v); const m = Number(prompt(L('p_mcap'), String(cfg('fs_media_cap', 40)))); if (m > 0) GM_setValue('fs_media_cap', m); });
   } catch { /* 略 */ }
 })();

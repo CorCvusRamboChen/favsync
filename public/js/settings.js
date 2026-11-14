@@ -1,165 +1,239 @@
-// 设置页：各平台卡片的状态与按钮。依赖 shell.js 的全局（$ esc toast postJson）。
-const when = (iso) => (iso ? esc(String(iso).slice(0, 16).replace('T', ' ')) : '');
+// 设置页：连接与授权（本机/远程、令牌、配对二维码、浏览器检测）→ 三张平台卡 → 定时 → 存档。
+// 所有登录流程走 shell.js 的同一个弹窗组件（modalOpen）。依赖 shell.js 的全局（$ esc t toast postJson ICON btnIcon copyText）。
+let WHO = { local: false, browser: null, public_url: '' };
+const dyAcct = (a) => a.nickname || a.id;
 
-// —— 油猴脚本安装：向服务要一个 24 小时有效的安装链接（脚本里带令牌，不能随便公开），然后让 Tampermonkey 接管 ——
-async function installScript(name) {
-  const r = await postJson('/api/userscript/install-link', { script: name });
-  if (r) window.open(r.url, '_blank', 'noopener');
+// ———————————————————————— 连接与授权 ————————————————————————
+let tokenShown = false, tokenData = null;
+async function connPaint() {
+  const el = $('#connGrid'); if (!el) return;
+  try { WHO = await (await fetch('/api/auth/whoami')).json(); } catch { /* 远程无令牌时 401：WHO 保持默认 */ }
+  if (WHO.local && !tokenData) { try { const r = await fetch('/api/auth/token'); if (r.ok) tokenData = await r.json(); } catch { /* 略 */ } }
+  const browserRow = `<dt>${esc(t('st.browser'))}</dt><dd>${WHO.browser ? `<span class="badge ok">${WHO.browser === 'msedge' ? 'Edge' : 'Chrome'}</span><span class="meta" style="margin:0">${esc(t('st.browser.ok', { b: WHO.browser === 'msedge' ? 'Edge' : 'Chrome' }))}</span>` : `<span class="badge bad">${esc(t('st.status.none'))}</span><span class="meta" style="margin:0">${esc(t('st.browser.none'))}</span>`}</dd>`;
+  const access = WHO.local
+    ? `<div class="t">${ICON.server}<span>${esc(t('st.access.local'))}</span><span class="badge ok">${esc(t('st.status.ok'))}</span></div><div class="meta">${esc(t('st.access.local.sub'))}</div>
+       <dl class="kv">
+         <dt>${esc(t('st.token'))}</dt><dd>${tokenData ? `<code class="tok ${tokenShown ? '' : 'hidden'}" id="tokVal">${tokenShown ? esc(tokenData.token) : '••••••••••••'}</code>
+           <button class="ed" onclick="tokenToggle()" title="${esc(tokenShown ? t('st.token.hide') : t('st.token.show'))}">${tokenShown ? ICON.eyeOff : ICON.eye}</button>
+           <button class="ed" onclick="copyText(tokenData.token)" title="${esc(t('common.copy'))}">${ICON.copy}</button>
+           ${tokenData.from_env ? `<span class="meta" style="margin:0">${esc(t('st.token.env'))}</span>` : `<button class="ed" onclick="tokenReset()" title="${esc(t('st.token.reset'))}">${ICON.refresh}<span>${esc(t('st.token.reset'))}</span></button>`}` : `<span class="meta" style="margin:0">${esc(t('common.unknown'))}</span>`}</dd>
+         <dt>${esc(t('st.publicurl'))}</dt><dd><code class="tok">${esc(WHO.public_url || tokenData?.public_url || '')}</code></dd>
+         ${browserRow}
+       </dl>`
+    : `<div class="t">${ICON.key}<span>${esc(t('st.access.remote'))}</span><span class="badge ${apiToken() ? 'ok' : 'warn'}">${esc(apiToken() ? t('st.status.ok') : t('token.need'))}</span></div><div class="meta">${esc(t('st.access.remote.sub'))} ${esc(apiToken() ? t('st.access.remote.has') : t('st.access.remote.none'))}</div>
+       <div class="acts">${btnIcon('key', t('token.go'), apiToken() ? 'btn-s' : 'btn-p', 'onclick="askToken()"')}</div>
+       <dl class="kv">${browserRow}</dl>`;
+  const pair = WHO.local && tokenData ? `<div class="t">${ICON.phone}<span>${esc(t('st.pair'))}</span></div><div class="meta">${esc(t('st.pair.sub'))}</div>
+       <div class="conn-qr">${tokenData.qr ? `<img src="${tokenData.qr}" alt="QR" onclick="pairModal()">` : ''}<div style="min-width:0"><div class="meta" style="margin:0">${esc(t('st.pair.url'))}</div><code class="tok" style="display:block;margin-top:4px">${esc(tokenData.pair_url.replace(/token=.*$/, 'token=…'))}</code>
+       <div class="acts" style="margin-top:8px">${btnIcon('qr', t('st.pair.show'), 'btn-s', 'onclick="pairModal()"')}${btnIcon('copy', t('common.copy'), 'btn-s', 'onclick="copyText(tokenData.pair_url)"')}</div></div></div>`
+    : `<div class="t">${ICON.phone}<span>${esc(t('st.pair'))}</span></div><div class="meta">${esc(t('st.pair.sub'))}</div><div class="meta" style="margin-top:8px">${esc(t('st.access.remote.sub'))}</div>`;
+  el.innerHTML = `<div class="card">${access}</div><div class="card">${pair}</div>`;
+}
+function tokenToggle() { tokenShown = !tokenShown; connPaint(); }
+async function tokenReset() {
+  if (!(await confirmModal(t('dlg.reset.title'), t('st.token.reset.confirm'), { danger: true }))) return;
+  const r = await postJson('/api/auth/token/reset', {});
+  if (!r) { toast(t('st.token.reset.fail')); return; }
+  tokenData = null; toast(t('st.token.reset.ok')); connPaint();
+}
+function pairModal() {
+  if (!tokenData?.qr) return;
+  modalOpen({ title: t('dlg.pair.title'), body: `<div class="qrbox"><img src="${tokenData.qr}" alt="QR"><div class="meta" style="text-align:center">${esc(t('dlg.pair.sub'))}</div></div>
+    <div class="cmd"><code>${esc(tokenData.pair_url)}</code>${btnIcon('copy', t('common.copy'), 'btn-s', 'onclick="copyText(tokenData.pair_url)"')}</div>` });
 }
 
-// —— 抖音：多账号 + 扫码登录（服务端无头浏览器把二维码导出来，这里轮询显示） ——
+// ———————————————————————— 平台卡公共件 ————————————————————————
+const badge = (kind, text) => `<span class="badge ${kind}">${esc(text)}</span>`;
+const statLine = (label, value) => (value ? `<div><span class="l">${esc(label)}</span> ${value}</div>` : '');
+const mediaLine = (s) => [t('st.media', { done: s.media_done ?? 0 }), s.media_pending ? t('st.media.pending', { n: s.media_pending }) : null, s.media_failed ? t('st.media.failed', { n: s.media_failed }) : null].filter(Boolean).join(' · ');
+let SOCIAL = null;
+// 远程没带令牌时所有 /api 都是 401：统一返回 null，各卡片显示"需要令牌"，不要拿错误 JSON 当状态用
+async function getJson(url) { try { const r = await fetch(url); if (!r.ok) return null; return await r.json(); } catch { return null; } }
+async function loadSocial() { SOCIAL = await getJson('/api/social/status'); return SOCIAL; }
+const needTokenCard = (el) => { el.innerHTML = `<div class="meta">${ICON.key} ${esc(t('token.need'))}</div><div class="acts">${btnIcon('key', t('token.go'), 'btn-p', 'onclick="askToken()"')}</div>`; };
+const schedToggle = (site) => `<label><input type="checkbox" ${SOCIAL?.sites?.[site]?.enabled ? 'checked' : ''} onchange="socialSetting({ ${site}_enabled: this.checked })"> ${esc(t('st.auto'))}</label>`;
+const needBrowser = () => (WHO.browser ? '' : `<div class="why">${ICON.alert} ${esc(t('st.browser.none'))}</div>`);
+
+// ———————————————————————— 抖音 ————————————————————————
+async function douyinPaint() {
+  const el = $('#plat-douyin'); if (!el) return;
+  const s = await getJson('/api/douyin/status'), ac = await getJson('/api/douyin/accounts');
+  if (!s || !ac) return needTokenCard(el);
+  const accts = ac.accounts ?? [];
+  // 已登录 = 在服务器上扫过码（或同步过）且登录态没过期；只在推送里出现过的昵称不算登录
+  const loggedIn = accts.filter((a) => (a.last_login_at || a.last_sync) && !a.need_login);
+  const bad = accts.filter((a) => a.need_login);
+  const st = accts.some((a) => a.logging_in) ? badge('busy', t('st.status.syncing')) : bad.length && bad.length === accts.length ? badge('bad', t('st.status.bad')) : !loggedIn.length ? badge('', t('st.status.none')) : bad.length ? badge('warn', t('st.status.partial')) : badge('ok', t('st.status.ok'));
+  const soc = SOCIAL?.sites?.douyin ?? {};
+  const last = soc.last_sync ? t('st.last', { t: fmtWhen(soc.last_sync) }) + (soc.last_result ? ' · ' + t('st.last.result', { n: soc.last_result.added }) : '') : t('st.last.none');
+  const acctRows = accts.length ? accts.map((a) => `<div class="acct"><b title="${esc(a.id)}">${esc(dyAcct(a))}</b>
+      ${a.logging_in ? `<span class="warn">${esc(t('st.dy.logging'))}</span>` : a.need_login ? `<span class="bad">${esc(t('st.dy.need'))}</span>` : a.last_sync ? `<span class="meta">${esc(t('st.last', { t: fmtWhen(a.last_sync) }))}</span>` : a.last_login_at ? `<span class="meta">${esc(t('st.dy.waiting'))}</span>` : `<span class="meta">${esc(t('st.dy.notyet'))}</span>`}
+      ${a.error ? `<span class="why" style="margin:0">${esc(String(a.error).slice(0, 50))}</span>` : ''}<span class="sp"></span>
+      <button class="ed" title="${esc(a.need_login || (!a.last_login_at && !a.nickname) ? t('st.dy.login') : t('st.dy.relogin'))}" onclick="douyinLogin(${JSON.stringify(a.id).replace(/"/g, '&quot;')})">${ICON.qr}</button>
+      <button class="ed" title="${esc(t('st.dy.sync.one'))}" onclick="douyinSync(${JSON.stringify(a.id).replace(/"/g, '&quot;')})">${ICON.sync}</button>
+      ${a.id !== 'main' ? `<button class="ed" title="${esc(t('st.dy.remove'))}" onclick="douyinRemove(${JSON.stringify(a.id).replace(/"/g, '&quot;')})">${ICON.trash}</button>` : ''}</div>`).join('') : `<div class="meta">${esc(t('st.dy.accounts.none'))}</div>`;
+  el.innerHTML = `<div class="hd"><div class="logo">${ICON.douyin}</div><div class="name">${esc(t('st.dy.title'))}${st}</div></div>
+    <div class="sub">${esc(t('st.dy.sub'))}</div>
+    <div class="stat"><div>${esc(last)}${soc.error ? ` · <span class="warn">${esc(soc.error)}</span>` : ''}</div>${s.total ? `<div>${esc(t('st.collected', { n: s.total }))} · ${esc(t('st.dy.kinds', { v: s.kinds?.video ?? 0, m: s.kinds?.music ?? 0 }))}</div><div>${esc(mediaLine(s))}</div>` : ''}
+      ${s.folders?.length ? `<div class="meta" style="margin:0">${esc(t('st.dy.folders', { list: s.folders.slice(0, 5).map((f) => `${f.name} ${f.n}${f.total ? '/' + f.total : ''}`).join('，') + (s.folders.length > 5 ? ' ' + t('st.dy.folders.more', { n: s.folders.length - 5 }) : '') }))}</div>` : ''}</div>
+    <div class="meta" style="margin-top:10px;font-weight:600">${esc(t('st.dy.accounts'))}</div><div class="accts">${acctRows}</div>
+    ${needBrowser()}
+    <div class="primary">${btnIcon('qr', accts.length ? t('st.dy.add') : t('st.dy.login'), 'btn-p', 'onclick="douyinLogin()"')}</div>
+    <div class="secondary">${btnIcon('sync', t('st.sync.now'), 'btn-s', 'onclick="douyinSync(\'all\')"')}${btnIcon('image', t('st.dy.fix'), 'btn-s', `title="${esc(t('st.dy.fix.title'))}" onclick="douyinFixCovers()"`)}${btnIcon('script', t('st.script'), 'btn-s', 'onclick="scriptModal(\'douyin\')"')}${schedToggle('douyin')}</div>`;
+}
 let douyinLoginTimer = null;
-async function douyinAccountsPaint() {
-  const el = $('#douyinAccounts'); if (!el) return;
-  try {
-    const d = await (await fetch('/api/douyin/accounts')).json();
-    if (!d.accounts?.length) { el.textContent = '还没有账号，点下面「添加抖音账号」扫码。'; return; }
-    el.innerHTML = d.accounts.map((a) => `<div class="acct">
-      <b>${esc(a.nickname || a.id)}</b><span class="meta" style="margin:0">(${esc(a.id)})</span>
-      ${a.logging_in ? '<span class="warn">正在扫码登录…</span>' : a.need_login ? '<span class="bad">需要重新登录</span>' : a.last_sync ? `上次同步 ${when(a.last_sync)}` : a.last_login_at ? '已登录，等下一轮同步' : '还没登录'}
-      ${a.error ? `<span class="why" style="margin:0">${esc(String(a.error).slice(0, 60))}</span>` : ''}
-      <button class="ed" title="扫码登录 / 重新登录" onclick="douyinLoginStart(${JSON.stringify(a.id).replace(/"/g, '&quot;')})">🔑 ${a.need_login || (!a.last_login_at && !a.nickname) ? '扫码登录' : '重新登录'}</button>
-      <button class="ed" title="只同步这个号" onclick="douyinSyncNow(${JSON.stringify(a.id).replace(/"/g, '&quot;')})">⟳</button>
-      ${a.id !== 'main' ? `<button class="ed" title="移除这个账号（已收的条目保留）" onclick="douyinRemove(${JSON.stringify(a.id).replace(/"/g, '&quot;')})">✕</button>` : ''}</div>`).join('');
-  } catch { el.textContent = '账号列表读不到'; }
-}
-async function douyinLoginStart(id = null) {
-  const box = $('#douyinLoginBox'); if (!box) return;
-  box.style.display = ''; box.innerHTML = '<div class="meta">正在开浏览器拿二维码（10–20 秒）…</div>';
-  const r = await postJson('/api/douyin/login/start', id ? { account: id } : {});
-  if (!r) { box.innerHTML = '<div class="why">没能开始登录</div>'; return; }
+async function douyinLogin(id = null) {
   clearInterval(douyinLoginTimer);
+  modalOpen({ title: t('dlg.dy.title'), body: `<div class="qrbox"><div class="st"><span class="spin"></span>${esc(t('dlg.dy.starting'))}</div></div>`, onClose: () => clearInterval(douyinLoginTimer) });
+  const r = await postJson('/api/douyin/login/start', id ? { account: id } : {});
+  if (!r) { modalBody(`<div class="badline">${ICON.alert} ${esc(t('common.failed'))}</div>`); return; }
+  const again = `<div class="row end" style="margin-top:10px">${btnIcon('refresh', t('dlg.dy.again'), 'btn-s', `onclick="douyinLogin(${JSON.stringify(r.account).replace(/"/g, '&quot;')})"`)}</div>`;
   const poll = async () => {
     const s = await (await fetch('/api/douyin/login/status?account=' + encodeURIComponent(r.account))).json();
-    if (s.state === 'qr' && s.qr) box.innerHTML = `<div class="meta">用<b>抖音 App</b> 扫这个码（账号 ${esc(r.account)}；二维码过期会自动换新的）</div><img class="qr" src="${s.qr}" alt="二维码"><div class="meta">扫完在手机上点确认，这里会自动变绿。</div>`;
-    else if (s.state === 'logged_in') { clearInterval(douyinLoginTimer); box.innerHTML = `<div class="ok">✅ 已登录${s.nickname ? '：' + esc(s.nickname) : ''}。下一轮定时同步会带上它；也可以点「现在同步全部账号」。</div>`; douyinAccountsPaint(); setTimeout(() => { box.style.display = 'none'; }, 8000); }
-    else if (s.state === 'timeout') { clearInterval(douyinLoginTimer); box.innerHTML = `<div class="why">8 分钟没扫码，已退出。<button class="btn-s" onclick="douyinLoginStart(${JSON.stringify(r.account).replace(/"/g, '&quot;')})">再来一次</button></div>`; }
-    else if (s.state === 'error' || s.state === 'noqr') { clearInterval(douyinLoginTimer); box.innerHTML = `<div class="why">没拿到二维码（${esc(s.raw || s.state)}）。服务器上要装 Chrome 或 Edge；<button class="btn-s" onclick="douyinLoginStart(${JSON.stringify(r.account).replace(/"/g, '&quot;')})">重试</button></div>`; }
+    if (s.state === 'qr' && s.qr) modalBody(`<div class="qrbox"><img src="${s.qr}" alt="QR"><div class="st"><span class="spin"></span>${esc(t('dlg.dy.wait'))} · ${esc(t('dlg.dy.scan'))}（${esc(t('dlg.dy.account', { id: r.account }))}）</div><div class="meta" style="text-align:center">${esc(t('dlg.dy.confirm'))}<br>${esc(t('dlg.dy.refresh'))}</div></div>`);
+    else if (s.state === 'logged_in') { clearInterval(douyinLoginTimer); modalBody(`<div class="qrbox"><div class="okline">${ICON.check} ${esc(t('dlg.dy.ok', { name: s.nickname ? '：' + s.nickname : '' }))}</div></div><div class="row end">${btnIcon('sync', t('dlg.dy.syncnow'), 'btn-p', `onclick="modalClose();douyinSync(${JSON.stringify(r.account).replace(/"/g, '&quot;')})"`)}</div>`); douyinPaint(); }
+    else if (s.state === 'timeout') { clearInterval(douyinLoginTimer); modalBody(`<div class="badline">${ICON.clock} ${esc(t('dlg.dy.timeout'))}</div>${again}`); }
+    else if (s.state === 'error' || s.state === 'noqr') { clearInterval(douyinLoginTimer); modalBody(`<div class="badline">${ICON.alert} ${esc(t('dlg.dy.error', { raw: s.raw || s.state }))}</div>${again}`); }
   };
   douyinLoginTimer = setInterval(poll, 3000); poll();
 }
-async function douyinSyncNow(account) {
-  toast('⏳ 已开始同步（要开浏览器翻页，几分钟）');
+async function douyinSync(account) {
+  toast(t('sync.started'));
   const r = await postJson('/api/douyin/sync', { account, mode: 'all', max_items: 300, media_limit: 20, max_ms: 180000 });
-  if (r) toast(r.list?.need_login ? '⚠ 账号需要重新登录' : `✅ 同步完：新 ${r.list?.added ?? 0} 条${r.media?.files ? '，媒体 ' + r.media.files + ' 个文件' : ''}${r.media?.stopped ? '；' + r.media.stopped : ''}`);
-  douyinAccountsPaint(); douyinStatusPaint();
+  if (r) toast(r.list?.need_login ? t('sync.need') : t('sync.ok', { n: r.list?.added ?? 0 }) + (r.media?.files ? t('sync.files', { n: r.media.files }) : '') + (r.media?.stopped ? '；' + r.media.stopped : ''));
+  refreshAll();
 }
 async function douyinRemove(id) {
-  if (!confirm(`移除账号 ${id}？它已收进来的条目和文件都保留，只是不再同步。`)) return;
+  if (!(await confirmModal(t('st.dy.remove'), t('st.dy.remove.confirm', { id }), { danger: true }))) return;
   const r = await fetch('/api/douyin/accounts/' + encodeURIComponent(id), { method: 'DELETE' });
-  toast(r.ok ? '已移除' : '❌ 没移除成'); douyinAccountsPaint();
+  toast(r.ok ? t('st.dy.removed') : t('common.failed')); douyinPaint();
 }
 async function douyinFixCovers() {
-  toast('⏳ 正在用视频帧重做封面…');
   const r = await postJson('/api/douyin/fix-covers', { limit: 200 });
-  if (r) toast(`✅ 修了 ${r.fixed} 条${r.failed ? '，失败 ' + r.failed : ''}，还剩 ${r.remaining}`);
-}
-async function douyinStatusPaint() {
-  const el = $('#douyinStatus'); if (!el) return;
-  try {
-    const s = await (await fetch('/api/douyin/status')).json();
-    if (!s.total) { el.textContent = '还没同步过。'; return; }
-    el.innerHTML = `已收 <b>${s.total}</b> 条${s.kinds ? `（视频/图文 ${s.kinds.video || 0} · 音乐 ${s.kinds.music || 0}）` : ''} · 媒体存好 ${s.media_done}${s.media_pending ? '，待存 ' + s.media_pending : ''}${s.media_failed ? '，失败 ' + s.media_failed : ''}`
-      + (s.accounts?.length ? ' · 账号：' + s.accounts.map((a) => `${esc(a.name)} ${a.n}`).join('，') : '')
-      + (s.folders?.length ? ' · 收藏夹：' + s.folders.slice(0, 6).map((f) => `${esc(f.name)} ${f.n}${f.total ? '/' + f.total : ''}`).join('，') + (s.folders.length > 6 ? ` 等 ${s.folders.length} 个` : '') : '');
-  } catch { el.textContent = ''; }
+  if (r) toast(t('st.dy.fix.ok', { fixed: r.fixed, failed: r.failed ? t('st.dy.fix.failed', { n: r.failed }) : '', remaining: r.remaining }));
 }
 
-// —— X：口令 + 电脑端登录脚本 ——
-async function xStatusPaint() {
-  const el = $('#xStatus'); if (!el) return;
-  try {
-    const s = await (await fetch('/api/x/status')).json();
-    const login = s.logged_in ? `<span class="ok">已登录${s.handle ? ' @' + esc(s.handle) : ''}</span>${s.last_sync ? '，上次同步 ' + when(s.last_sync) : '，还没同步过'}${s.syncing ? '，⏳ 正在同步' : ''}${s.sync_error ? '，<span class="warn">' + esc(s.sync_error) + '</span>' : ''}` : s.need_login ? '<span class="bad">登录失效，重新登一下</span>' : '服务器还没登录 X';
-    el.innerHTML = login + (s.total ? `<br>已收 <b>${s.total}</b> 条（点赞 ${s.liked} · 书签 ${s.bookmarked}）· 媒体存好 ${s.media_done}${s.media_pending ? '，待存 ' + s.media_pending : ''}${s.media_failed ? '，失败 ' + s.media_failed : ''}${s.accounts?.length ? ' · 账号：' + s.accounts.map((a) => '@' + esc(a.name) + ' ' + a.n).join('，') : ''}` : '');
-  } catch { el.textContent = ''; }
+// ———————————————————————— X ————————————————————————
+async function xPaint() {
+  const el = $('#plat-x'); if (!el) return;
+  const s = await getJson('/api/x/status'); if (!s) return needTokenCard(el);
+  const st = s.syncing ? badge('busy', t('st.status.syncing')) : s.logged_in ? badge('ok', t('st.status.ok') + (s.handle ? ' @' + s.handle : '')) : s.need_login ? badge('bad', t('st.status.bad')) : badge('', t('st.status.none'));
+  const last = s.last_sync ? t('st.last', { t: fmtWhen(s.last_sync) }) + (s.last_result ? ' · ' + t('st.last.result', { n: s.last_result.added }) : '') : t('st.last.none');
+  el.innerHTML = `<div class="hd"><div class="logo">${ICON.xlogo}</div><div class="name">${esc(t('st.x.title'))}${st}</div></div>
+    <div class="sub">${esc(t('st.x.sub'))}</div>
+    <div class="stat"><div>${esc(last)}${s.sync_error ? ` · <span class="warn">${esc(s.sync_error)}</span>` : ''}</div>${s.total ? `<div>${esc(t('st.collected', { n: s.total }))} · ${esc(t('st.x.liked', { n: s.liked }))} · ${esc(t('st.x.bookmarked', { n: s.bookmarked }))}</div><div>${esc(mediaLine(s))}</div>` : ''}
+      ${s.accounts?.length ? `<div class="meta" style="margin:0">${s.accounts.map((a) => '@' + esc(a.name) + ' ' + a.n).join('，')}</div>` : ''}</div>
+    ${needBrowser()}
+    <div class="primary">${btnIcon('monitor', s.logged_in ? t('st.x.relogin') : t('st.x.login'), 'btn-p', 'onclick="xLogin()"')}</div>
+    <div class="secondary">${btnIcon('sync', t('st.sync.now'), 'btn-s', 'onclick="xSync()"')}${btnIcon('script', t('st.script.backup'), 'btn-s', 'onclick="scriptModal(\'x\')"')}${s.logged_in ? btnIcon('logout', t('st.logout'), 'btn-s', 'onclick="xLogout()"') : ''}${schedToggle('x')}</div>
+    <div class="meta" style="margin-top:8px">${t('st.x.import', { api: '<code>POST /api/x/import {path, kind}</code>' })}</div>`;
 }
-let xLoginTimer = null;
-async function xLoginStart() {
-  const box = $('#xLoginBox'); if (!box) return;
-  box.style.display = ''; box.innerHTML = '<div class="meta">正在生成口令…</div>';
-  const t = await postJson('/api/x/ticket', {});
-  if (!t) { box.innerHTML = '<div class="why">没拿到口令</div>'; return; }
-  const cmd = `node scripts/login-x.mjs --server ${location.origin} --code ${t.code}`;
-  box.innerHTML = `<div class="meta">在<b>有屏幕的电脑</b>上（FavSync 项目目录里，装过依赖）运行这一条，会弹出一个 Chrome 窗口，照常登录 X，登完它自己把登录态发回来：</div>
-    <div class="cmd"><code id="xLoginCmd">${esc(cmd)}</code><button class="btn-s" onclick="navigator.clipboard.writeText($('#xLoginCmd').textContent).then(()=>toast('已复制'))">复制</button></div>
-    <div class="meta">口令 <b>${t.code}</b>，15 分钟有效、只能用一次。服务器地址如果不是浏览器里看到的这个，把 --server 换成服务器的公网/内网地址。</div><div class="meta" id="xLoginState" style="margin-top:6px">等待登录…</div>`;
-  clearInterval(xLoginTimer);
+let xLoginTimer = null, xCountdown = null;
+async function xLogin() {
+  clearInterval(xLoginTimer); clearInterval(xCountdown);
+  modalOpen({ title: t('dlg.x.title'), wide: true, body: `<div class="qrbox"><div class="st"><span class="spin"></span>${esc(t('common.loading'))}</div></div>`, onClose: () => { clearInterval(xLoginTimer); clearInterval(xCountdown); } });
+  const tk = await postJson('/api/x/ticket', {});
+  if (!tk) { modalBody(`<div class="badline">${ICON.alert} ${esc(t('common.failed'))}</div>`); return; }
+  const cmd = `node scripts/login-x.mjs --server ${location.origin} --code ${tk.code}`;
+  const exp = tk.expires_at ? Date.parse(tk.expires_at) : Date.now() + (tk.expires_in ?? 900) * 1000;
+  modalBody(`<div class="meta">${esc(t('dlg.x.sub'))}</div>
+    <div class="bigcode" id="xCode">${esc(tk.code)}</div><div class="meta" style="text-align:center" id="xExp"></div>
+    <div class="cmd"><code id="xCmd">${esc(cmd)}</code>${btnIcon('copy', t('common.copy'), 'btn-s', 'onclick="copyText($(\'#xCmd\').textContent)"')}</div>
+    <div class="meta">${esc(t('dlg.x.server'))}</div>
+    <div class="st" id="xState" style="margin-top:10px;display:flex;align-items:center;gap:8px"><span class="spin"></span>${esc(t('dlg.x.wait'))}</div>`);
+  const tick = () => {
+    const left = Math.max(0, exp - Date.now()); const m = Math.floor(left / 60000), sec = Math.floor(left % 60000 / 1000);
+    const el = $('#xExp'); if (!el) { clearInterval(xCountdown); return; }
+    if (!left) { clearInterval(xCountdown); clearInterval(xLoginTimer); el.innerHTML = `<span class="bad">${esc(t('dlg.x.expired'))}</span> ${btnIcon('refresh', t('dlg.x.renew'), 'btn-s', 'onclick="xLogin()"')}`; $('#xState')?.remove(); return; }
+    el.textContent = t('dlg.x.expire', { m, s: String(sec).padStart(2, '0') });
+  };
+  tick(); xCountdown = setInterval(tick, 1000);
   xLoginTimer = setInterval(async () => {
     const s = await (await fetch('/api/x/status')).json();
-    const st = $('#xLoginState'); if (!st) { clearInterval(xLoginTimer); return; }
-    if (s.logged_in && s.logged_in_at && Date.now() - Date.parse(s.logged_in_at) < 20 * 60000) { clearInterval(xLoginTimer); st.innerHTML = '<span class="ok">已登录，正在同步书签和点赞…</span>'; xStatusPaint(); }
+    const st = $('#xState'); if (!st) { clearInterval(xLoginTimer); return; }
+    if (s.logged_in && s.logged_in_at && Date.now() - Date.parse(s.logged_in_at) < 20 * 60000) { clearInterval(xLoginTimer); clearInterval(xCountdown); st.innerHTML = `<span class="okline">${ICON.check} ${esc(t('dlg.x.ok', { h: s.handle ? ' @' + s.handle : '' }))}</span>`; $('#xExp')?.remove(); xPaint(); }
   }, 3000);
 }
-async function xSyncNow() {
-  toast('⏳ 开始同步 X（要开浏览器翻页，几分钟）');
+async function xSync() {
+  toast(t('sync.started'));
   const r = await postJson('/api/x/sync', {});
-  if (r) toast(r.need_login ? '⚠ 服务器还没登录 X' : r.skipped ? '上一轮还在跑' : `✅ 新 ${r.added ?? 0} 条${r.blocked ? '，' + r.blocked : ''}`);
-  xStatusPaint();
+  if (r) toast(r.need_login ? t('st.x.sync.need') : r.skipped ? t('st.x.sync.busy') : t('st.x.sync.ok', { n: r.added ?? 0 }) + (r.blocked ? '，' + r.blocked : ''));
+  refreshAll();
 }
-async function xLogout() { if (!confirm('清掉服务器上的 X 登录态？已收的条目不受影响。')) return; if (await postJson('/api/x/logout', {})) { toast('已退出'); xStatusPaint(); } }
+async function xLogout() { if (!(await confirmModal(t('st.logout'), t('st.x.logout.confirm'), { danger: true }))) return; if (await postJson('/api/x/logout', {})) { toast(t('st.x.logout.ok')); refreshAll(); } }
 
-// —— 微博 ——
-async function weiboStatusPaint() {
-  const el = $('#weiboStatus'); if (!el) return;
-  try {
-    const s = await (await fetch('/api/weibo/status')).json();
-    if (!s.total) { el.textContent = '还没同步过。'; return; }
-    el.innerHTML = `已收 <b>${s.total}</b> 条（导入 ${s.imported} · 已失效 ${s.unavailable}）· 图存好 ${s.media_done}${s.media_pending ? '，待补 ' + s.media_pending : ''}${s.media_failed ? '，失败 ' + s.media_failed : ''} · 视频 ${s.video_done}${s.video_pending ? '，待下 ' + s.video_pending + '（要油猴脚本）' : ''}${s.fetching ? ' · ⏳ 正在补图' : ''}`;
-  } catch { el.textContent = ''; }
+// ———————————————————————— 微博 ————————————————————————
+async function weiboPaint() {
+  const el = $('#plat-weibo'); if (!el) return;
+  const s = await getJson('/api/weibo/status'); if (!s) return needTokenCard(el);
+  const soc = SOCIAL?.sites?.weibo ?? {};
+  const st = s.fetching || SOCIAL?.running ? badge('busy', t('st.status.syncing')) : soc.need_login ? badge('bad', t('st.status.bad')) : soc.last_sync ? badge('ok', t('st.status.ok')) : badge('', t('st.status.none'));
+  const last = soc.last_sync ? t('st.last', { t: fmtWhen(soc.last_sync) }) + (soc.last_result ? ' · ' + t('st.last.result', { n: soc.last_result.added }) : '') : t('st.last.none');
+  el.innerHTML = `<div class="hd"><div class="logo">${ICON.weibo}</div><div class="name">${esc(t('st.wb.title'))}${st}</div></div>
+    <div class="sub">${esc(t('st.wb.sub'))}</div>
+    <div class="stat"><div>${esc(last)}${soc.error ? ` · <span class="warn">${esc(soc.error)}</span>` : ''}</div>${s.total ? `<div>${esc(t('st.collected', { n: s.total }))} · ${esc(t('st.wb.imported', { n: s.imported }))} · ${esc(t('st.wb.dead', { n: s.unavailable }))}</div><div>${esc(mediaLine(s))} · ${esc(t('st.wb.video', { n: s.video_done }))}${s.video_pending ? ' · ' + esc(t('st.wb.video.pending', { n: s.video_pending })) : ''}</div>` : ''}</div>
+    <div class="imp"><input class="f" id="weiboImportPath" placeholder="${esc(t('st.wb.import.path'))}"></div>
+    <label class="meta" style="display:inline-flex;align-items:center;gap:5px;margin-top:6px"><input type="checkbox" id="weiboImportOwn"> ${esc(t('st.wb.import.own'))}</label>
+    <div class="primary">${btnIcon('upload', t('st.wb.import'), 'btn-p', 'onclick="weiboImport(this)"')}${btnIcon('script', t('st.script'), 'btn-s', 'onclick="scriptModal(\'weibo\')"')}</div>
+    <div class="secondary">${btnIcon('monitor', t('st.wb.login'), 'btn-s', `title="${esc(t('st.wb.login.title'))}" onclick="socialLogin('weibo')"`)}${btnIcon('download', t('st.wb.fetch'), 'btn-s', 'onclick="weiboFetch()"')}${schedToggle('weibo')}</div>`;
 }
 async function weiboImport(btn) {
   btn.disabled = true;
   try {
     const r = await postJson('/api/weibo/import', { path: $('#weiboImportPath').value, include_own: $('#weiboImportOwn').checked });
-    if (r) toast(`✅ 导入 ${r.added} 条新收藏，${r.updated} 条已有${r.media_fetch_started ? '；图片正在后台补全' : ''}`);
-    weiboStatusPaint();
+    if (r) toast(t('st.wb.import.ok', { added: r.added, updated: r.updated }) + (r.media_fetch_started ? t('st.wb.import.media') : ''));
+    refreshAll();
   } finally { btn.disabled = false; }
 }
-async function weiboFetchNow() { const r = await postJson('/api/weibo/media/fetch', { limit: 40 }); if (r) toast(`补图：成功 ${r.done} / 失败 ${r.failed}，${r.files} 个文件`); weiboStatusPaint(); }
+async function weiboFetch() { const r = await postJson('/api/weibo/media/fetch', { limit: 40 }); if (r) toast(t('st.wb.fetch.ok', { done: r.done, failed: r.failed, files: r.files })); weiboPaint(); }
+async function socialLogin(site) { const r = await postJson('/api/social/login', { site }); if (r) toast(t('st.wb.login.started')); }
 
-// —— 常态化同步 ——
-async function socialLogin(site) { const r = await postJson('/api/social/login', { site }); if (r) toast('🪟 ' + r.message); }
-async function socialSync(full) {
-  const r = await postJson('/api/social/sync', { full, force: true });
-  if (r) toast('⏳ 已开始，要开浏览器翻页，几分钟后看状态');
-  setTimeout(socialStatusPaint, 8000);
-}
-async function socialSetting(patch) { const r = await postJson('/api/social/settings', patch); if (r) toast('✅ 已保存'); socialStatusPaint(); }
-async function socialStatusPaint() {
-  const el = $('#socialStatus'); if (!el) return;
-  try {
-    const s = await (await fetch('/api/social/status')).json();
-    const line = (name, st, fav) => `<b>${name}</b> ${fav.total} 条${fav.media_pending ? `（${fav.media_pending} 条媒体还在补）` : ''} · ${st.need_login ? '<span class="bad">需要重新登录</span>' : st.last_sync ? '上次定时同步 ' + when(st.last_sync) + (st.last_result ? `，新 ${st.last_result.added} 条` : '') : '还没登录过（脚本/导入照常可用）'}${st.error ? ` · <span class="warn">${esc(st.error)}</span>` : ''}${st.enabled ? '' : '（定时未开）'}`;
-    el.innerHTML = [line('抖音', s.sites.douyin, s.douyin), line('微博', s.sites.weibo, s.weibo), line('X', s.sites.x, s.x)].join('<br>') + (s.running ? '<br>⏳ 正在同步…' : '');
-    for (const site of ['douyin', 'weibo', 'x']) { const cb = $('#en_' + site); if (cb) cb.checked = !!s.sites[site].enabled; }
-  } catch { el.textContent = '状态读不到'; }
+// ———————————————————————— 油猴脚本安装弹窗 ————————————————————————
+async function scriptModal(name) {
+  const label = { douyin: t('st.dy.title'), weibo: t('st.wb.title'), x: t('st.x.title') }[name];
+  modalOpen({ title: t('dlg.script.title', { p: label }), wide: true, body: `<div class="qrbox"><div class="st"><span class="spin"></span>${esc(t('common.loading'))}</div></div>` });
+  const r = await postJson('/api/userscript/install-link', { script: name });
+  if (!r) { modalBody(`<div class="badline">${ICON.alert} ${esc(t('common.failed'))}</div>`); return; }
+  modalBody(`<div class="meta">${esc(t('dlg.script.sub'))}</div>
+    <div class="meta" style="margin-top:8px;font-weight:600">${esc(t('dlg.script.link'))}</div>
+    <div class="cmd"><code id="scriptUrl">${esc(r.url)}</code>${btnIcon('copy', t('common.copy'), 'btn-s', 'onclick="copyText($(\'#scriptUrl\').textContent)"')}</div>
+    <div class="row end">${btnIcon('external', t('dlg.script.open'), 'btn-p', `onclick="window.open(${JSON.stringify(r.url).replace(/"/g, '&quot;')}, '_blank', 'noopener')"`)}</div>
+    <div class="meta" style="margin-top:12px;font-weight:600">${esc(t('dlg.script.steps'))}</div>
+    <ol><li>${esc(t('dlg.script.s1'))}</li><li>${esc(t('dlg.script.s2'))}</li><li>${esc(t('dlg.script.s3.' + name))}</li></ol>
+    <div class="meta" style="margin-top:10px">${ICON.alert} ${esc(t('dlg.script.note'))}</div>`);
 }
 
-// —— 存档 / 令牌 ——
+// ———————————————————————— 定时 / 存档 ————————————————————————
+async function schedPaint() {
+  const el = $('#schedCard'); if (!el) return;
+  if (!SOCIAL?.sites) return needTokenCard(el);
+  const hours = SOCIAL.hours ?? 12;
+  const line = (name, site, fav) => { const st = SOCIAL.sites[site] ?? {}; return `<div><b>${esc(name)}</b> ${esc(t('st.collected', { n: fav?.total ?? 0 }))}${fav?.media_pending ? esc(t('st.sched.mediapending', { n: fav.media_pending })) : ''} · ${st.need_login ? `<span class="bad">${esc(t('st.status.bad'))}</span>` : st.last_sync ? esc(t('st.last', { t: fmtWhen(st.last_sync) })) + (st.last_result ? '，' + esc(t('st.last.result', { n: st.last_result.added })) : '') : esc(t('st.sched.nologin'))}${st.error ? ` · <span class="warn">${esc(st.error)}</span>` : ''}${st.enabled ? '' : ' ' + esc(t('st.sched.off'))}</div>`; };
+  el.innerHTML = `<div class="t">${ICON.clock}<span>${esc(t('st.sched', { h: hours }))}</span>${SOCIAL.running ? badge('busy', t('st.sched.running')) : ''}</div>
+    <div class="sub">${esc(t('st.sched.sub'))}</div>
+    <div class="lines">${line(t('st.dy.title'), 'douyin', SOCIAL.douyin)}${line(t('st.wb.title'), 'weibo', SOCIAL.weibo)}${line(t('st.x.title'), 'x', SOCIAL.x)}</div>
+    <div class="acts">${btnIcon('sync', t('st.sched.inc'), 'btn-p', 'onclick="socialSync(false)"')}${btnIcon('refresh', t('st.sched.full'), 'btn-s', 'onclick="socialSync(true)"')}</div>`;
+}
+async function socialSync(full) { const r = await postJson('/api/social/sync', { full, force: true }); if (r) toast(t('st.sched.started')); setTimeout(refreshAll, 8000); }
+async function socialSetting(patch) { const r = await postJson('/api/social/settings', patch); if (r) toast(t('common.saved')); refreshAll(); }
 async function archivePaint() {
-  const el = $('#archiveStatus'); if (!el) return;
+  const el = $('#archiveCard'); if (!el) return;
   try {
-    const a = await (await fetch('/api/archive')).json();
-    const mb = (n) => (n > 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : (n / 1048576).toFixed(1) + ' MB');
-    el.innerHTML = `目录 <code>${esc(a.root)}</code>${a.exists ? '' : '（还没建）'}<br>已存 <b>${a.done}</b> / ${a.total} 条 · ${mb(a.bytes)}${a.failed ? ` · <span class="warn">${a.failed} 条失败</span>` : ''}`;
-  } catch { el.textContent = '读不到'; }
+    const a = await getJson('/api/archive'); if (!a) return needTokenCard(el);
+    const size = a.bytes > 1073741824 ? (a.bytes / 1073741824).toFixed(2) + ' GB' : (a.bytes / 1048576).toFixed(1) + ' MB';
+    el.innerHTML = `<div class="t">${ICON.archive}<span>${esc(t('st.archive'))}</span></div><div class="meta">${esc(t('st.archive.sub'))}</div>
+      <div class="meta" style="margin-top:10px">${esc(t('st.archive.dir'))} <code>${esc(a.root)}</code>${a.exists ? '' : ' ' + esc(t('st.archive.missing'))}<br>${esc(t('st.archive.count', { done: a.done, total: a.total, size }))}${a.failed ? ` · <span class="warn">${esc(t('st.archive.failed', { n: a.failed }))}</span>` : ''}</div>
+      <div class="acts">${btnIcon('folder', t('arc.root'), 'btn-s', 'onclick="arcSetRoot()"')}${btnIcon('link', t('st.archive.index'), 'btn-s', 'onclick="arcIndex()"')}${btnIcon('image', t('st.archive.flag'), 'btn-s', `title="${esc(t('st.archive.flag.title'))}" onclick="arcFlagAnim()"`)}${a.exists ? `<a class="btn-s ico" href="/archive/" target="_blank" rel="noopener">${ICON.external}<span>${esc(t('arc.open'))}</span></a>` : ''}</div>`;
+  } catch { el.innerHTML = `<div class="meta">${esc(t('common.unknown'))}</div>`; }
 }
-async function arcSetRootFromSettings() {
+async function arcSetRoot() {
   const a = await (await fetch('/api/archive')).json();
-  const root = prompt('存档目录（指向云盘同步的文件夹，留空恢复默认 ~/FavSync/archive）。注意：改目录不会搬已有文件。', a.root);
+  const root = prompt(t('arc.root.prompt'), a.root);
   if (root === null) return;
-  if (await postJson('/api/archive/root', { root: root.trim() })) { toast('✅ 已改'); archivePaint(); }
+  if (await postJson('/api/archive/root', { root: root.trim() })) { toast(t('common.saved')); archivePaint(); }
 }
-async function arcIndexFromSettings() { const r = await postJson('/api/archive/index', {}); if (r) toast(`✅ 索引页已生成（${r.count} 条）：${r.index}`); }
-async function arcFlagAnim() { const r = await postJson('/api/archive/flag-anim', {}); if (r) toast(`检查 ${r.checked} 张，补标 ${r.flagged} 张${r.missing ? '，缺文件 ' + r.missing : ''}`); }
-async function tokenPaint() {
-  const el = $('#tokenBox'); if (!el) return;
-  const r = await fetch('/api/auth/token');
-  if (!r.ok) { el.innerHTML = '这台设备不是服务器本机，令牌只能在服务器上看。' + (apiToken() ? ' 本机已保存令牌。' : ' <button class="btn-s" onclick="askToken()">填写令牌</button>'); return; }
-  const d = await r.json();
-  el.innerHTML = `访问令牌：<code id="tok" style="user-select:all">${esc(d.token)}</code> <button class="btn-s" onclick="navigator.clipboard.writeText($('#tok').textContent).then(()=>toast('已复制'))">复制</button><br>脚本推送地址（FAVSYNC_PUBLIC_URL）：<code>${esc(d.public_url)}</code>`;
-}
+async function arcIndex() { const r = await postJson('/api/archive/index', {}); if (r) toast(t('arc.index.ok', { n: r.count, p: r.index })); }
+async function arcFlagAnim() { const r = await postJson('/api/archive/flag-anim', {}); if (r) toast(t('st.archive.flag.ok', { checked: r.checked, flagged: r.flagged })); }
 
-douyinStatusPaint(); douyinAccountsPaint(); xStatusPaint(); weiboStatusPaint(); socialStatusPaint(); archivePaint(); tokenPaint();
-connectLive(() => { douyinStatusPaint(); xStatusPaint(); weiboStatusPaint(); socialStatusPaint(); archivePaint(); });
+async function refreshAll() { await loadSocial(); douyinPaint(); xPaint(); weiboPaint(); schedPaint(); archivePaint(); }
+document.addEventListener('DOMContentLoaded', () => { connPaint(); refreshAll(); connectLive(refreshAll); });

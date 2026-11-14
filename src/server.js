@@ -8,7 +8,13 @@ import { listItems, stats as libraryStats, listTags, setTags, itemView, updateIt
 import { archiveRoot, setArchiveRoot, archiveStatus, archivesFor, writeIndex } from './archive.js';
 import { flagAnimatedImages } from './connectors/favorites-archive.js';
 import { thumbHandler } from './thumbs.js';
-import { authMiddleware, needToken, privileged, isLocal, apiToken, issueInstallCode, installCodeValid } from './auth.js';
+import QRCode from 'qrcode';
+import { authMiddleware, needToken, privileged, isLocal, apiToken, resetToken, tokenFromEnv, pairUrl, issueInstallCode, installCodeValid } from './auth.js';
+import { detectBrowser } from './connectors/browser-profiles.js';
+
+// Node 版本：node:sqlite 要 22.5+（版本太低时上面的 import 已经报错了；这里兜住 22.0–22.4 这种能 import 但行为不全的情况）
+const [major, minor] = process.versions.node.split('.').map(Number);
+if (major < 22 || (major === 22 && minor < 5)) { console.error(`[favsync] 需要 Node.js >= 22.5（内置 node:sqlite），当前 ${process.versions.node} | Node.js >= 22.5 required, you have ${process.versions.node}`); process.exit(1); }
 import { addClient, broadcast, clientCount } from './events.js';
 import * as douyin from './connectors/douyin-favorites.js';
 import * as weibo from './connectors/weibo-favorites.js';
@@ -38,10 +44,29 @@ const wrap = (handler, status = 400, { log = false } = {}) => async (req, res) =
 const forbid = (res, msg = '只能在服务器本机操作，或带访问令牌') => res.status(403).json({ error: msg });
 
 app.use('/api', authMiddleware);
-app.get('/api/health', (_req, res) => res.json({ ok: true, name: 'favsync', clients: clientCount() }));
-app.get('/api/auth/whoami', (req, res) => res.json({ local: isLocal(req), auth: req.auth }));
-// 令牌只给本机看（远程设备要先拿到它才能连进来，所以只能在服务器上看/复制）
-app.get('/api/auth/token', (req, res) => (isLocal(req) ? res.json({ token: apiToken(), public_url: publicUrl() }) : forbid(res, '令牌只能在服务器本机查看')));
+let browserInfo = null;   // 启动时探测一次；登录按钮据此给提示
+app.get('/api/health', (_req, res) => res.json({ ok: true, name: 'favsync', node: process.versions.node, clients: clientCount(), browser: browserInfo ? browserInfo.channel : null, public_url: publicUrl() }));
+app.get('/api/auth/whoami', (req, res) => res.json({ local: isLocal(req), auth: req.auth, browser: browserInfo ? browserInfo.channel : null, public_url: publicUrl() }));
+// 令牌只给本机看（远程设备要先拿到它才能连进来，所以只能在服务器上看/复制）。配对二维码 = 带 token 的收藏库地址
+app.get('/api/auth/token', wrap(async (req, res) => {
+  if (!isLocal(req)) return forbid(res, '令牌只能在服务器本机查看 | The token can only be viewed on the server itself');
+  const token = apiToken();
+  const pair = pairUrl(publicUrl(), token);
+  const qr = req.query.qr === '0' ? null : await QRCode.toDataURL(pair, { margin: 1, width: 280, errorCorrectionLevel: 'M' });
+  res.json({ token, from_env: tokenFromEnv(), public_url: publicUrl(), pair_url: pair, qr });
+}, 500));
+app.post('/api/auth/token/reset', (req, res) => {
+  if (!isLocal(req)) return forbid(res, '只能在服务器本机重置 | Reset only on the server itself');
+  const tkn = resetToken();
+  if (!tkn) return res.status(409).json({ error: '令牌来自环境变量 FAVSYNC_TOKEN，改环境变量才能换 | Token is set by FAVSYNC_TOKEN; change the environment variable instead' });
+  res.json({ ok: true, token: tkn });
+});
+// 二维码图片（只给本服务自己的地址用；长度限制，别当公共二维码服务）
+app.get('/api/qr', wrap(async (req, res) => {
+  const text = String(req.query.text ?? '');
+  if (!text || text.length > 1500) return res.status(400).json({ error: 'text' });
+  res.set('Cache-Control', 'no-store').type('image/png').send(await QRCode.toBuffer(text, { margin: 1, width: Math.min(Number(req.query.w) || 280, 800) }));
+}, 500));
 
 // —— SSE：页面实时刷新 ——
 app.get('/api/events', (req, res) => {
@@ -257,7 +282,7 @@ app.post('/api/x/sync', wrap(async (req, res) => { if (!privileged(req)) return 
 app.post('/api/x/logout', (req, res) => { if (!privileged(req)) return forbid(res); x.logout(); writeSocialState({ x: { need_login: true } }); res.json({ ok: true }); });
 
 // —— 常态化同步（定时） ——
-app.get('/api/social/status', (_req, res) => res.json({ ...socialStatus(), weibo: weibo.favoritesStatus(), douyin: douyin.favoritesStatus(), x: x.favoritesStatus() }));
+app.get('/api/social/status', (_req, res) => res.json({ ...socialStatus(), hours: Number(process.env.FAVSYNC_SYNC_HOURS) || 12, weibo: weibo.favoritesStatus(), douyin: douyin.favoritesStatus(), x: x.favoritesStatus() }));
 app.post('/api/social/sync', wrap(async (req, res) => {
   if (!privileged(req)) return forbid(res);
   const sites = Array.isArray(req.body?.sites) ? req.body.sites.filter((s) => SOCIAL_SITES.includes(s)) : SOCIAL_SITES;
@@ -283,8 +308,17 @@ app.post('/api/social/login', wrap(async (req, res) => {
 
 app.use('/api', (_req, res) => res.status(404).json({ error: '没有这个接口' }));
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
+  browserInfo = detectBrowser();
   console.log(`[favsync] http://localhost:${PORT}  收藏库 /library.html  设置 /settings.html`);
   console.log(`[favsync] 数据目录 ${dataDir()}  存档目录 ${archiveRoot()}${existsSync(archiveRoot()) ? '' : '（还没建，第一条收藏进来时自动建）'}`);
+  console.log(browserInfo ? `[favsync] 浏览器 ${browserInfo.channel}：${browserInfo.path}` : '[favsync] 没找到 Chrome / Edge：扫码登录和无头同步用不了，装一个再来 | No Chrome/Edge found: QR sign-in and headless sync will not work');
+  if (process.env.FAVSYNC_PUBLIC_URL) console.log(`[favsync] 对外地址 ${publicUrl()}`);
   if (process.env.FAVSYNC_NO_JOBS !== '1') for (const job of createBackgroundJobs()) job.start();
+});
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') console.error(`[favsync] 端口 ${PORT} 被占用了：换一个 PORT=xxxx，或者看看是不是已经开着一个 FavSync | Port ${PORT} is in use: set PORT=xxxx or check whether FavSync is already running`);
+  else if (e.code === 'EACCES') console.error(`[favsync] 没权限监听端口 ${PORT} | No permission to listen on port ${PORT}`);
+  else console.error('[favsync] 启动失败 | Failed to start:', e.message);
+  process.exit(1);
 });

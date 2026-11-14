@@ -24,6 +24,71 @@
 //   4. 图片视频不在浏览器里下：X 的 CDN 是公开的，服务器自己去下，所以脚本只推文字和地址，很轻。
 (function () {
   'use strict';
+  // —— 面板文案 zh / en（按浏览器语言）——
+  const LANG = /^zh/i.test(navigator.language || '') ? 'zh' : 'en';
+  const T = {
+    "zh": {
+      "title": "FavSync · X 点赞 / 书签",
+      "acct": "账号：@{h}",
+      "acct_none": "账号：还没认出来（点赞页地址里有）",
+      "got": "抄到 点赞 <b>{l}</b> · 书签 <b>{b}</b> · 已推送 <b>{p}</b>",
+      "pending": " · 待推 {n}",
+      "stop": "停下",
+      "start": "自动翻到底",
+      "push": "推送",
+      "hint_ready": "页面已经在加载列表，点「自动翻到底」，或者自己慢慢滚也行",
+      "hint_open": "打开「点赞」或「书签」页，它一加载我就开始记",
+      "blocked": "X 接口回了 {s}",
+      "blocked_stop": "X 开始限流（{s}），已停下。过一会儿再来",
+      "pushed_msg": "已推送 {p} 条",
+      "push_fail": "推送失败：{e}",
+      "open_first": "先打开 x.com/你的用户名/likes 或 x.com/i/bookmarks",
+      "scrolling": "自动翻页中（最多 {cap} 条）…别动这个标签页",
+      "login": "页面让你登录，先登一下再来",
+      "cap_hit": "到 {cap} 条上限了，先停（油猴菜单可改）",
+      "rest": "歇一下（已抄到 {n} 条）…",
+      "bottom": "翻到底了",
+      "idle": "20 秒没有新条目，可能到底了",
+      "stopped": "已停下",
+      "conn_fail": "连不上 FavSync（它开着吗？）",
+      "bad_json": "FavSync 返回了非 JSON：{s}",
+      "timeout": "FavSync 响应超时",
+      "m_start": "X 点赞/书签：自动翻到底",
+      "m_cap": "X 点赞/书签：设置每次上限",
+      "p_cap": "每次最多翻多少条？（默认 500）"
+    },
+    "en": {
+      "title": "FavSync · X likes / bookmarks",
+      "acct": "Account: @{h}",
+      "acct_none": "Account: not detected yet (it is in the likes page URL)",
+      "got": "Collected likes <b>{l}</b> · bookmarks <b>{b}</b> · pushed <b>{p}</b>",
+      "pending": " · {n} queued",
+      "stop": "Stop",
+      "start": "Auto-scroll",
+      "push": "Push",
+      "hint_ready": "The timeline is loading — click Auto-scroll, or scroll yourself",
+      "hint_open": "Open your Likes or Bookmarks page; collection starts as soon as it loads",
+      "blocked": "X API returned {s}",
+      "blocked_stop": "X is rate-limiting ({s}); stopped. Come back later",
+      "pushed_msg": "Pushed {p}",
+      "push_fail": "Push failed: {e}",
+      "open_first": "Open x.com/<you>/likes or x.com/i/bookmarks first",
+      "scrolling": "Auto-scrolling (up to {cap})… leave this tab alone",
+      "login": "The page asks you to sign in — do that first",
+      "cap_hit": "Reached the {cap} limit; stopping (change it in the Tampermonkey menu)",
+      "rest": "Resting (collected {n})…",
+      "bottom": "Reached the end",
+      "idle": "Nothing new for 20 s — probably the end",
+      "stopped": "Stopped",
+      "conn_fail": "Cannot reach FavSync (is it running?)",
+      "bad_json": "FavSync returned non-JSON: {s}",
+      "timeout": "FavSync timed out",
+      "m_start": "X likes/bookmarks: auto-scroll",
+      "m_cap": "X likes/bookmarks: set limit",
+      "p_cap": "Max items per run? (default 500)"
+    }
+  };
+  const L = (k, v) => { let s = (T[LANG] && T[LANG][k]) || T.zh[k] || k; if (v) for (const [a, b] of Object.entries(v)) s = s.split('{' + a + '}').join(String(b)); return s; };
   const SERVER = '__SERVER__';
   const TOKEN = '__TOKEN__';
   const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
@@ -67,7 +132,7 @@
     paint();
   }
   function sniff(url, status, text) {
-    if ((status === 429 || status === 403) && ANY_API_RE.test(url)) { blocked = `X 接口回了 ${status}`; stopScroll('X 开始限流（' + status + '），已停下。过一会儿再来'); return; }
+    if ((status === 429 || status === 403) && ANY_API_RE.test(url)) { blocked = L('blocked', { s: status }); stopScroll(L('blocked_stop', { s: status })); return; }
     if (text && GQL_RE.test(url)) absorb(url, text);
   }
   const xo = W.XMLHttpRequest.prototype.open, xs = W.XMLHttpRequest.prototype.send;
@@ -101,8 +166,8 @@
       method, url: SERVER + path, timeout: 120000,
       headers: { Authorization: 'Bearer ' + TOKEN, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       data: body ? JSON.stringify(body) : undefined,
-      onload: (r) => { try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error('FavSync 返回了非 JSON：' + r.status)); } },
-      onerror: () => reject(new Error('连不上 FavSync（它开着吗？）')), ontimeout: () => reject(new Error('FavSync 响应超时')),
+      onload: (r) => { try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error(L('bad_json', { s: r.status }))); } },
+      onerror: () => reject(new Error(L('conn_fail'))), ontimeout: () => reject(new Error(L('timeout'))),
     }));
   }
   let pushing = false;
@@ -118,8 +183,8 @@
         const r = await api('POST', '/api/x/push', { items: byKind[kind], kind, account });
         pushed += (r.added ?? 0) + (r.updated ?? 0);
       }
-      say(`已推送 ${pushed} 条${account ? ' · 账号 @' + account : ''}`);
-    } catch (e) { pending.unshift(...batch); say('推送失败：' + e.message, true); }
+      say(L('pushed_msg', { p: pushed }) + (account ? ' · @' + account : ''));
+    } catch (e) { pending.unshift(...batch); say(L('push_fail', { e: e.message }), true); }
     finally { pushing = false; paint(); }
   }
 
@@ -128,19 +193,19 @@
   const onListPage = () => /\/likes(\?|$)|\/i\/bookmarks/.test(location.pathname);
   async function startScroll() {
     if (scrolling) return;
-    if (!onListPage()) { say('先打开 x.com/你的用户名/likes 或 x.com/i/bookmarks', true); return; }
+    if (!onListPage()) { say(L('open_first'), true); return; }
     cap = cfg('fs_x_cap', 500); scrolling = true; blocked = null; rounds = 0; lastNewAt = Date.now(); hasMore = true;
-    say(`自动翻页中（最多 ${cap} 条）…别动这个标签页`); paint();
+    say(L('scrolling', { cap })); paint();
     while (scrolling) {
-      if (document.querySelector('[data-testid="LoginForm_Login_Button"], a[href="/login"][data-testid]')) { stopScroll('页面让你登录，先登一下再来'); break; }
-      if (seen.size >= cap) { stopScroll(`到 ${cap} 条上限了，先停（油猴菜单可改）`); break; }
+      if (document.querySelector('[data-testid="LoginForm_Login_Button"], a[href="/login"][data-testid]')) { stopScroll(L('login')); break; }
+      if (seen.size >= cap) { stopScroll(L('cap_hit', { cap })); break; }
       W.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
       rounds++;
       await sleep(rand(1500, 3000));
-      if (rounds % 8 === 0) { say(`歇一下（已抄到 ${seen.size} 条）…`); await sleep(rand(5000, 10000)); }
+      if (rounds % 8 === 0) { say(L('rest', { n: seen.size })); await sleep(rand(5000, 10000)); }
       if (!scrolling) break;
-      if (!hasMore) { stopScroll('翻到底了'); break; }
-      if (Date.now() - lastNewAt > 20000) { stopScroll('20 秒没有新条目，可能到底了'); break; }
+      if (!hasMore) { stopScroll(L('bottom')); break; }
+      if (Date.now() - lastNewAt > 20000) { stopScroll(L('idle')); break; }
     }
     await pushBatch();
     paint();
@@ -162,17 +227,17 @@
     box.style.display = '';
     const btn = (label, fn, primary) => `<button data-fn="${fn}" style="border:0;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:12px;${primary ? 'background:#fafafa;color:#000' : 'background:rgba(255,255,255,.14);color:#fafafa'}">${label}</button>`;
     const likes = [...kindOf.values()].filter((s) => s.has('like')).length, bms = [...kindOf.values()].filter((s) => s.has('bookmark')).length;
-    box.innerHTML = `<div style="font-weight:600;margin-bottom:2px">FavSync · X 点赞 / 书签</div>
-      <div style="opacity:.75;font-size:11.5px">${account ? '账号：@' + account : '账号：还没认出来（点赞页地址里有）'}</div>
-      <div style="opacity:.8;margin-top:2px">抄到 点赞 <b>${likes}</b> · 书签 <b>${bms}</b> · 已推送 <b>${pushed}</b>${pending.length ? ` · 待推 ${pending.length}` : ''}</div>
-      <div style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap">${scrolling ? btn('停下', 'stop') : btn('自动翻到底', 'start', true)}${pending.length ? btn('推送', 'push') : ''}</div>
-      <div style="margin-top:4px;color:${bad ? '#ff9a8a' : 'rgba(250,250,250,.7)'}">${msg || (hits ? '页面已经在加载列表，点「自动翻到底」，或者自己慢慢滚也行' : '打开「点赞」或「书签」页，它一加载我就开始记')}</div>`;
-    box.querySelectorAll('[data-fn]').forEach((el) => { el.onclick = () => ({ start: startScroll, stop: () => stopScroll('已停下'), push: pushBatch })[el.dataset.fn]?.(); });
+    box.innerHTML = `<div style="font-weight:600;margin-bottom:2px">${L('title')}</div>
+      <div style="opacity:.75;font-size:11.5px">${account ? L('acct', { h: account }) : L('acct_none')}</div>
+      <div style="opacity:.8;margin-top:2px">${L('got', { l: likes, b: bms, p: pushed })}${pending.length ? L('pending', { n: pending.length }) : ''}</div>
+      <div style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap">${scrolling ? btn(L('stop'), 'stop') : btn(L('start'), 'start', true)}${pending.length ? btn(L('push'), 'push') : ''}</div>
+      <div style="margin-top:4px;color:${bad ? '#ff9a8a' : 'rgba(250,250,250,.7)'}">${msg || (hits ? L('hint_ready') : L('hint_open'))}</div>`;
+    box.querySelectorAll('[data-fn]').forEach((el) => { el.onclick = () => ({ start: startScroll, stop: () => stopScroll(L('stopped')), push: pushBatch })[el.dataset.fn]?.(); });
   }
   const boot = () => { paint(); setInterval(() => { if (!account) accountFromPage(); paint(); }, 4000); setInterval(() => { if (pending.length) pushBatch(); }, 15000); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
   try {
-    GM_registerMenuCommand('X 点赞/书签：自动翻到底', startScroll);
-    GM_registerMenuCommand('X 点赞/书签：设置每次上限', () => { const v = Number(prompt('每次最多翻多少条？（默认 500）', String(cfg('fs_x_cap', 500)))); if (v > 0) GM_setValue('fs_x_cap', v); });
+    GM_registerMenuCommand(L('m_start'), startScroll);
+    GM_registerMenuCommand(L('m_cap'), () => { const v = Number(prompt(L('p_cap'), String(cfg('fs_x_cap', 500)))); if (v > 0) GM_setValue('fs_x_cap', v); });
   } catch { /* 略 */ }
 })();

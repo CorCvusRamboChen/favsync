@@ -18,3 +18,7 @@ body.pg #sync { top:auto; bottom:14px; }
   .pg-top h1 { display:none; }
   body.pg main { padding:14px 14px 24px; }
 }
+
+/* 顶栏右侧工具组 */
+.pg-top .tools { display:flex; align-items:center; gap:2px; }
+@media (max-width:768px) { .pg-top .tools .hb span { display:none; } }

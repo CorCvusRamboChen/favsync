@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>设置 · FavSync</title>
+<title data-i18n-doc="app.settings">设置 · FavSync</title>
 <link rel="icon" href="/icon.svg">
 <link rel="stylesheet" href="/css/base.css">
 <link rel="stylesheet" href="/css/page.css">
@@ -11,88 +11,35 @@
 </head>
 <body class="pg">
 <header class="pg-top">
-  <a class="back" href="/library.html">‹ <b>Fav</b>Sync</a>
-  <h1>⚙ 设置</h1>
+  <a class="back" href="/library.html"><b>Fav</b>Sync</a>
+  <h1 data-i18n="app.settings">设置</h1>
   <div class="sp"></div>
-  <button class="back" onclick="cycleTheme()" title="切换主题" style="background:none;border:0;cursor:pointer;font:inherit">◐ 主题</button>
-  <a class="back" href="/library.html">📚 收藏库 ›</a>
+  <div class="tools" id="hdrTools" data-page="settings"></div>
 </header>
 <main class="st">
-  <h2>平台</h2>
+  <section class="sect" id="connSect">
+    <h2 data-i18n="st.conn">连接与授权</h2>
+    <p class="lead" data-i18n="st.conn.sub"></p>
+    <div class="conn-grid" id="connGrid"><div class="card"><div class="meta" data-i18n="common.reading">读取中…</div></div></div>
+  </section>
 
-  <div class="card" id="cardDouyin"><div class="t">♪ 抖音收藏 → 收藏库（含封面、视频、图文原图、实况、动图、收藏的音乐）</div>
-    <div class="meta"><b>两条路</b>：① <b>服务端定时同步</b>（推荐）：每个账号在服务器上扫一次码，之后每 12 小时无头翻一遍「全部收藏」「音乐」和每个收藏夹，媒体文件分批补；② <b>油猴脚本</b>：在你自己登着抖音的浏览器里跑。</div>
-    <div class="meta"><b>不会被封号的做法</b>：零额外请求，只旁听页面自己翻收藏时的响应；翻页每次随机等 2–3 秒、每 8 次歇 5–10 秒；下载一个一个来、每 10 个歇一会；接口一回 403/429、页面一出验证码、下载连续失败 3 次，立刻停下来告诉你，不硬刷。</div>
-    <div id="douyinStatus" class="meta" style="margin:8px 0"></div>
-    <div class="t" style="font-size:13px;margin-top:8px">账号（每个号各自的登录态）</div>
-    <div id="douyinAccounts" class="meta" style="margin:4px 0 8px">读取中…</div>
-    <div id="douyinLoginBox" class="card" style="display:none;margin:6px 0 10px;text-align:center"></div>
-    <div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap">
-      <button class="btn-p" onclick="douyinLoginStart()">＋ 添加抖音账号（手机扫码）</button>
-      <button class="btn-s" onclick="douyinSyncNow('all')">现在同步全部账号</button>
-      <button class="btn-s" onclick="douyinFixCovers()" title="已下好视频但封面是接口给的裁切版：用视频帧重做完整画幅">修复裁切封面</button>
-      <button class="btn-s" onclick="installScript('douyin')">安装油猴脚本</button>
+  <section class="sect">
+    <h2 data-i18n="st.platforms">平台</h2>
+    <div class="plat-grid" id="platGrid">
+      <div class="card plat" id="plat-douyin"><div class="meta" data-i18n="common.reading">读取中…</div></div>
+      <div class="card plat" id="plat-x"><div class="meta" data-i18n="common.reading">读取中…</div></div>
+      <div class="card plat" id="plat-weibo"><div class="meta" data-i18n="common.reading">读取中…</div></div>
     </div>
-    <div class="meta" style="margin-top:6px">第二个号扫完码，它的收藏、收藏夹、音乐就和第一个号一样进定时同步；每条标「抖音@昵称」区分，收藏夹标「抖音夹·名字」。抖音接口变了就改 <code>normalizeAweme</code> / <code>LIST_RE</code>。</div>
-  </div>
+    <div class="card sched" id="schedCard"><div class="meta" data-i18n="common.reading">读取中…</div></div>
+  </section>
 
-  <div class="card" id="cardX"><div class="t">𝕏 X（Twitter）点赞 + 书签 → 收藏库（含图片、视频、动图）</div>
-    <div class="meta">X 没有扫码登录，服务器往往又没屏幕：点「用电脑浏览器登录」拿一个口令，在<b>有屏幕的电脑</b>上跑一条命令，弹出的 Chrome 里正常登录 X，登录态自动发回服务器；之后每 12 小时无头翻一遍书签页和点赞页。图片视频 X 的 CDN 是公开的，由服务端自己下（原图 / 最高码率 mp4 / 动图）。同一条推既点赞又收藏只有一张卡，标签「X点赞」「X书签」「X@账号」区分。</div>
-    <div id="xStatus" class="meta" style="margin:8px 0"></div>
-    <div id="xLoginBox" class="card" style="display:none;margin:6px 0 10px"></div>
-    <div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap">
-      <button class="btn-p" onclick="xLoginStart()">用电脑浏览器登录（拿口令）</button>
-      <button class="btn-s" onclick="xSyncNow()">现在同步</button>
-      <button class="btn-s" onclick="installScript('x')">备用：安装油猴脚本</button>
-      <button class="btn-s" onclick="xLogout()">退出登录</button>
-    </div>
-    <div class="meta" style="margin-top:6px">有 twitter-web-exporter 导出的 JSON 也能导入：<code>POST /api/x/import {path, kind}</code>（服务器本机）。</div>
-  </div>
-
-  <div class="card" id="cardWeibo"><div class="t">W 微博收藏 → 收藏库（含图片，视频需油猴脚本）</div>
-    <div class="meta"><b>三条路</b>：① <b>服务端定时同步</b>：在服务器上登录一次微博（下面的按钮，服务器要有屏幕），之后每 12 小时直接调收藏接口翻一遍；② <b>导入 Weibo-archiver 导出的 JSON</b>——填服务器本机路径直接导入，图片由服务端带 Referer 下好；③ <b>油猴脚本</b>——在登着微博的浏览器里一页页翻，视频直链也只有它拿得到。原微博已删的也会留一条「（已失效的微博）」记录（标签「已失效」，收藏库默认隐藏）。</div>
-    <div id="weiboStatus" class="meta" style="margin:8px 0"></div>
-    <div class="row" style="gap:6px;flex-wrap:wrap;margin:6px 0">
-      <input class="f" id="weiboImportPath" placeholder="weibo-data-昵称.json 在服务器上的完整路径" style="flex:1;min-width:260px">
-      <label class="meta" style="display:inline-flex;align-items:center;gap:4px;margin:0"><input type="checkbox" id="weiboImportOwn"> 自己发的微博也要</label>
-      <button class="btn-p" onclick="weiboImport(this)">导入导出文件</button></div>
-    <div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap">
-      <button class="btn-s" onclick="socialLogin('weibo')">在服务器上登录微博（弹窗口）</button>
-      <button class="btn-s" onclick="weiboFetchNow()">现在补图</button>
-      <button class="btn-s" onclick="installScript('weibo')">安装油猴脚本</button>
-    </div>
-  </div>
-
-  <div class="card" style="border-color:var(--accent)"><div class="t">🔁 常态化保存：服务端每 12 小时自己去拉</div>
-    <div class="meta">登录过的站才会跑；登录态过期了这里会亮红字提醒再登一次，不会反复用过期态去撞。脚本和定时两条路互不冲突，谁先抄到算谁的。<b>原站删了的条目这里不删</b>——文件早就在存档目录里了。间隔可用环境变量 <code>FAVSYNC_SYNC_HOURS</code> 改。</div>
-    <div class="row" style="justify-content:flex-start;gap:14px;flex-wrap:wrap;margin:6px 0">
-      <label class="meta" style="display:inline-flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="en_douyin" onchange="socialSetting({ douyin_enabled: this.checked })"> 抖音</label>
-      <label class="meta" style="display:inline-flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="en_weibo" onchange="socialSetting({ weibo_enabled: this.checked })"> 微博</label>
-      <label class="meta" style="display:inline-flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="en_x" onchange="socialSetting({ x_enabled: this.checked })"> X</label>
-    </div>
-    <div id="socialStatus" class="meta" style="margin:6px 0">状态读取中…</div>
-    <div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap">
-      <button class="btn-s" onclick="socialSync(false)">现在增量同步</button>
-      <button class="btn-s" onclick="socialSync(true)">全量重翻一遍</button></div>
-  </div>
-
-  <h2 style="margin-top:28px">存档与访问</h2>
-  <div class="card"><div class="t">📥 存档目录</div>
-    <div class="meta">每条收藏一个文件夹：<code>年/月/站点-标题-link编号/</code>，里面是 readable.md、metadata.json、cover.jpg、image-NN、video.mp4、audio.mp3……全是普通文件。把这个目录指向云盘同步的文件夹，站点被封也不丢。</div>
-    <div id="archiveStatus" class="meta" style="margin:8px 0">读取中…</div>
-    <div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap">
-      <button class="btn-s" onclick="arcSetRootFromSettings()">改目录</button>
-      <button class="btn-s" onclick="arcIndexFromSettings()">生成静态索引页</button>
-      <button class="btn-s" onclick="arcFlagAnim()" title="早先存下的 image-NN.webp 里有动图没标出来：读文件头认一遍，改名 .anim.webp">补标动图</button>
-    </div>
-  </div>
-  <div class="card"><div class="t">🔑 远程访问</div>
-    <div class="meta">服务器本机打开免验证。手机 / 别的电脑访问时需要访问令牌：在服务器上打开这页能看到它，复制到那台设备的收藏库页里（它会弹框问）。油猴脚本和登录脚本也用这个令牌。令牌来自环境变量 <code>FAVSYNC_TOKEN</code>，没配就自动生成在 <code>data/token.json</code>。</div>
-    <div id="tokenBox" class="meta" style="margin:8px 0">读取中…</div>
-    <div class="meta">油猴脚本要推送到的地址默认是 <code>http://localhost:端口</code>；服务跑在别的机器上时，用环境变量 <code>FAVSYNC_PUBLIC_URL</code> 指成那台机器的地址，再重新安装脚本。</div>
-  </div>
+  <section class="sect">
+    <h2 data-i18n="st.archive">存档目录</h2>
+    <div class="card" id="archiveCard"><div class="meta" data-i18n="common.reading">读取中…</div></div>
+  </section>
 </main>
 <div id="toast"></div>
+<script src="/js/i18n.js"></script>
 <script src="/js/shell.js"></script>
 <script src="/js/settings.js"></script>
 </body>
