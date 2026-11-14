@@ -1,0 +1,20 @@
+/* 独立页面（/library.html、/settings.html）的外壳：一条细顶栏 + 内容区。
+   "顶栏 + main"的纵向两块，令牌全部沿用 base.css。 */
+body.pg { display:flex; flex-direction:column; height:100vh; }
+.pg-top { flex:none; display:flex; align-items:center; gap:14px; height:46px; padding:0 18px; border-bottom:1px solid var(--line); background:var(--sidebar-bg); color:var(--sidebar-text); }
+.pg-top .back { color:var(--sidebar-dim); text-decoration:none; font-size:13px; white-space:nowrap; }
+.pg-top .back:hover { color:var(--sidebar-text); }
+.pg-top .back b { color:var(--sidebar-accent); font-weight:600; }
+.pg-top h1 { font-size:14px; font-weight:600; margin:0; white-space:nowrap; }
+.pg-top .tabs { display:inline-flex; gap:2px; margin-left:6px; }
+.pg-top .tabs button { background:none; border:0; color:var(--sidebar-dim); padding:5px 10px; border-radius:var(--r-s); cursor:pointer; font-size:13px; min-height:30px; }
+.pg-top .tabs button.on { background:var(--sidebar-hover); color:var(--sidebar-text); }
+.pg-top .sp { flex:1; }
+.pg-top .meta { margin:0; color:var(--sidebar-dim); }
+body.pg main { flex:1; overflow:auto; padding:22px 26px; min-width:0; }
+body.pg #sync { top:auto; bottom:14px; }
+@media (max-width:768px) {
+  .pg-top { padding:0 12px; gap:10px; }
+  .pg-top h1 { display:none; }
+  body.pg main { padding:14px 14px 24px; }
+}
