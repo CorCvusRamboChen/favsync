@@ -66,7 +66,7 @@ Access from the server itself needs no sign-in. Phones and other computers need 
 
 <img src="docs/mobile.png" alt="Library at 390px" width="300">
 
-The UI is bilingual (中文 / English, toggle in the header, follows the browser language by default) and has light / dark themes. Screenshots use generated placeholder content.
+The UI is bilingual (中文 / English, toggle in the header, follows the browser language by default) and has light / dark themes. The library, lightbox and mobile screenshots are taken from the author's own instance (a Douyin collection folder of drawing tutorials); the settings and sign-in dialogs use generated placeholder data.
 
 ## Project layout
 
